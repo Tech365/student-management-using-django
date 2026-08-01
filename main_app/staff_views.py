@@ -1,14 +1,19 @@
 import json
+import logging
 
 from django.contrib import messages
 from django.core.files.storage import FileSystemStorage
+from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import (HttpResponseRedirect, get_object_or_404,redirect, render)
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.csrf import csrf_exempt
 
-from .forms import *
-from .models import *
+from .forms import FeedbackStaffForm, LeaveReportStaffForm, StaffEditForm
+from .models import (Attendance, AttendanceReport, CustomUser, FeedbackStaff,
+                     LeaveReportStaff, NotificationStaff, Session, Staff,
+                     Student, StudentResult, Subject)
+
+logger = logging.getLogger(__name__)
 
 
 def staff_home(request):
@@ -17,14 +22,13 @@ def staff_home(request):
     total_leave = LeaveReportStaff.objects.filter(staff=staff).count()
     subjects = Subject.objects.filter(staff=staff)
     total_subject = subjects.count()
-    attendance_list = Attendance.objects.filter(subject__in=subjects)
-    total_attendance = attendance_list.count()
-    attendance_list = []
-    subject_list = []
-    for subject in subjects:
-        attendance_count = Attendance.objects.filter(subject=subject).count()
-        subject_list.append(subject.name)
-        attendance_list.append(attendance_count)
+    total_attendance = Attendance.objects.filter(subject__in=subjects).count()
+    attendance_counts = dict(
+        Attendance.objects.filter(subject__in=subjects)
+        .values_list('subject').annotate(count=Count('id'))
+    )
+    subject_list = [subject.name for subject in subjects]
+    attendance_list = [attendance_counts.get(subject.id, 0) for subject in subjects]
     context = {
         'page_title': 'Staff Panel - ' + str(staff.admin.last_name) + ' (' + str(staff.course) + ')',
         'total_students': total_students,
@@ -50,7 +54,6 @@ def staff_take_attendance(request):
     return render(request, 'staff_template/staff_take_attendance.html', context)
 
 
-@csrf_exempt
 def get_students(request):
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
@@ -68,11 +71,10 @@ def get_students(request):
             student_data.append(data)
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
     except Exception as e:
-        return e
+        logger.exception("Failed to fetch students")
+        return JsonResponse({'error': str(e)}, status=400)
 
 
-
-@csrf_exempt
 def save_attendance(request):
     student_data = request.POST.get('student_ids')
     date = request.POST.get('date')
@@ -98,7 +100,8 @@ def save_attendance(request):
                 attendance_report.save()
 
     except Exception as e:
-        return None
+        logger.exception("Failed to save attendance")
+        return HttpResponse("False")
 
     return HttpResponse("OK")
 
@@ -116,7 +119,6 @@ def staff_update_attendance(request):
     return render(request, 'staff_template/staff_update_attendance.html', context)
 
 
-@csrf_exempt
 def get_student_attendance(request):
     attendance_date_id = request.POST.get('attendance_date_id')
     try:
@@ -130,10 +132,10 @@ def get_student_attendance(request):
             student_data.append(data)
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
     except Exception as e:
-        return e
+        logger.exception("Failed to fetch student attendance")
+        return JsonResponse({'error': str(e)}, status=400)
 
 
-@csrf_exempt
 def update_attendance(request):
     student_data = request.POST.get('student_ids')
     date = request.POST.get('date')
@@ -148,7 +150,8 @@ def update_attendance(request):
             attendance_report.status = student_dict.get('status')
             attendance_report.save()
     except Exception as e:
-        return None
+        logger.exception("Failed to update attendance")
+        return HttpResponse("False")
 
     return HttpResponse("OK")
 
@@ -171,6 +174,7 @@ def staff_apply_leave(request):
                     request, "Application for leave has been submitted for review")
                 return redirect(reverse('staff_apply_leave'))
             except Exception:
+                logger.exception('Unhandled error in staff_apply_leave')
                 messages.error(request, "Could not apply!")
         else:
             messages.error(request, "Form has errors!")
@@ -194,6 +198,7 @@ def staff_feedback(request):
                 messages.success(request, "Feedback submitted for review")
                 return redirect(reverse('staff_feedback'))
             except Exception:
+                logger.exception('Unhandled error in staff_feedback')
                 messages.error(request, "Could not Submit!")
         else:
             messages.error(request, "Form has errors!")
@@ -214,9 +219,9 @@ def staff_view_profile(request):
                 gender = form.cleaned_data.get('gender')
                 passport = request.FILES.get('profile_pic') or None
                 admin = staff.admin
-                if password != None:
+                if password is not None:
                     admin.set_password(password)
-                if passport != None:
+                if passport is not None:
                     fs = FileSystemStorage()
                     filename = fs.save(passport.name, passport)
                     passport_url = fs.url(filename)
@@ -233,14 +238,14 @@ def staff_view_profile(request):
                 messages.error(request, "Invalid Data Provided")
                 return render(request, "staff_template/staff_view_profile.html", context)
         except Exception as e:
+            logger.exception('Unhandled error in staff_view_profile')
             messages.error(
-                request, "Error Occured While Updating Profile " + str(e))
+                request, "Error Occurred While Updating Profile " + str(e))
             return render(request, "staff_template/staff_view_profile.html", context)
 
     return render(request, "staff_template/staff_view_profile.html", context)
 
 
-@csrf_exempt
 def staff_fcmtoken(request):
     token = request.POST.get('token')
     try:
@@ -249,6 +254,7 @@ def staff_fcmtoken(request):
         staff_user.save()
         return HttpResponse("True")
     except Exception as e:
+        logger.exception('Unhandled error in staff_fcmtoken')
         return HttpResponse("False")
 
 
@@ -278,7 +284,9 @@ def staff_add_result(request):
             test = request.POST.get('test')
             exam = request.POST.get('exam')
             student = get_object_or_404(Student, id=student_id)
-            subject = get_object_or_404(Subject, id=subject_id)
+            # Scoped to `staff` so a staff member can't submit another
+            # teacher's subject_id and edit grades they don't own.
+            subject = get_object_or_404(Subject, id=subject_id, staff=staff)
             try:
                 data = StudentResult.objects.get(
                     student=student, subject=subject)
@@ -287,21 +295,25 @@ def staff_add_result(request):
                 data.save()
                 messages.success(request, "Scores Updated")
             except:
+                logger.exception('Unhandled error in staff_add_result')
                 result = StudentResult(student=student, subject=subject, test=test, exam=exam)
                 result.save()
                 messages.success(request, "Scores Saved")
         except Exception as e:
-            messages.warning(request, "Error Occured While Processing Form")
+            logger.exception('Unhandled error in staff_add_result')
+            messages.warning(request, "Error Occurred While Processing Form")
     return render(request, "staff_template/staff_add_result.html", context)
 
 
-@csrf_exempt
 def fetch_student_result(request):
     try:
+        staff = get_object_or_404(Staff, admin=request.user)
         subject_id = request.POST.get('subject')
         student_id = request.POST.get('student')
         student = get_object_or_404(Student, id=student_id)
-        subject = get_object_or_404(Subject, id=subject_id)
+        # Scoped to `staff` so a staff member can't read another
+        # teacher's subject results by guessing subject_id.
+        subject = get_object_or_404(Subject, id=subject_id, staff=staff)
         result = StudentResult.objects.get(student=student, subject=subject)
         result_data = {
             'exam': result.exam,
@@ -309,4 +321,5 @@ def fetch_student_result(request):
         }
         return HttpResponse(json.dumps(result_data))
     except Exception as e:
+        logger.exception('Unhandled error in fetch_student_result')
         return HttpResponse('False')

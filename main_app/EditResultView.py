@@ -1,9 +1,13 @@
+import logging
+
 from django.shortcuts import get_object_or_404, render, redirect
 from django.views import View
 from django.contrib import messages
 from .models import Subject, Staff, Student, StudentResult
 from .forms import EditResultForm
 from django.urls import reverse
+
+logger = logging.getLogger(__name__)
 
 
 class EditResultView(View):
@@ -19,6 +23,7 @@ class EditResultView(View):
 
     def post(self, request, *args, **kwargs):
         form = EditResultForm(request.POST)
+        staff = get_object_or_404(Staff, admin=request.user)
         context = {'form': form, 'page_title': "Edit Student's Result"}
         if form.is_valid():
             try:
@@ -26,7 +31,12 @@ class EditResultView(View):
                 subject = form.cleaned_data.get('subject')
                 test = form.cleaned_data.get('test')
                 exam = form.cleaned_data.get('exam')
-                # Validating
+                # Reject subjects that don't belong to the requesting staff
+                # member, so a tampered subject id can't be used to edit
+                # another teacher's results.
+                if subject.staff_id != staff.id:
+                    messages.warning(request, "Result Could Not Be Updated")
+                    return render(request, "staff_template/edit_student_result.html", context)
                 result = StudentResult.objects.get(student=student, subject=subject)
                 result.exam = exam
                 result.test = test
@@ -34,6 +44,7 @@ class EditResultView(View):
                 messages.success(request, "Result Updated")
                 return redirect(reverse('edit_student_result'))
             except Exception as e:
+                logger.exception('Unhandled error in post')
                 messages.warning(request, "Result Could Not Be Updated")
         else:
             messages.warning(request, "Result Could Not Be Updated")

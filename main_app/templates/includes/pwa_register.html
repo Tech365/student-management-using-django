@@ -1,0 +1,9 @@
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+            navigator.serviceWorker.register("{% url 'showFirebaseJS' %}").catch(function (err) {
+                console.warn('Service worker registration failed:', err);
+            });
+        });
+    }
+</script>

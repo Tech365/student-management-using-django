@@ -1,17 +1,25 @@
 import json
+import logging
+
 import requests
+from django.conf import settings
 from django.contrib import messages
 from django.core.files.storage import FileSystemStorage
+from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import (HttpResponse, HttpResponseRedirect,
-                              get_object_or_404, redirect, render)
+from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.generic import UpdateView
 
-from .forms import *
-from .models import *
+from .forms import (AdminForm, CourseForm, SessionForm, StaffForm,
+                    StudentForm, SubjectForm)
+from .models import (Admin, Attendance, AttendanceReport, Course, CustomUser,
+                     FeedbackStaff, FeedbackStudent, LeaveReportStaff,
+                     LeaveReportStudent, NotificationStaff,
+                     NotificationStudent, Session, Staff, Student, Subject)
+from .utils import paginate
+
+logger = logging.getLogger(__name__)
 
 
 def admin_home(request):
@@ -20,14 +28,12 @@ def admin_home(request):
     subjects = Subject.objects.all()
     total_subject = subjects.count()
     total_course = Course.objects.all().count()
-    attendance_list = Attendance.objects.filter(subject__in=subjects)
-    total_attendance = attendance_list.count()
-    attendance_list = []
-    subject_list = []
-    for subject in subjects:
-        attendance_count = Attendance.objects.filter(subject=subject).count()
-        subject_list.append(subject.name[:7])
-        attendance_list.append(attendance_count)
+    attendance_counts = dict(
+        Attendance.objects.filter(subject__in=subjects)
+        .values_list('subject').annotate(count=Count('id'))
+    )
+    subject_list = [subject.name[:7] for subject in subjects]
+    attendance_list = [attendance_counts.get(subject.id, 0) for subject in subjects]
     context = {
         'page_title': "Administrative Dashboard",
         'total_students': total_students,
@@ -68,6 +74,7 @@ def add_staff(request):
                 return redirect(reverse('add_staff'))
 
             except Exception as e:
+                logger.exception('Unhandled error in add_staff')
                 messages.error(request, "Could Not Add " + str(e))
         else:
             messages.error(request, "Please fulfil all requirements")
@@ -103,6 +110,7 @@ def add_student(request):
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_student'))
             except Exception as e:
+                logger.exception('Unhandled error in add_student')
                 messages.error(request, "Could Not Add: " + str(e))
         else:
             messages.error(request, "Could Not Add: ")
@@ -125,6 +133,7 @@ def add_course(request):
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_course'))
             except:
+                logger.exception('Unhandled error in add_course')
                 messages.error(request, "Could Not Add")
         else:
             messages.error(request, "Could Not Add")
@@ -152,6 +161,7 @@ def add_subject(request):
                 return redirect(reverse('add_subject'))
 
             except Exception as e:
+                logger.exception('Unhandled error in add_subject')
                 messages.error(request, "Could Not Add " + str(e))
         else:
             messages.error(request, "Fill Form Properly")
@@ -160,36 +170,40 @@ def add_subject(request):
 
 
 def manage_staff(request):
-    allStaff = CustomUser.objects.filter(user_type=2)
+    allStaff = paginate(request, CustomUser.objects.filter(user_type=2).select_related('staff', 'staff__course').order_by('id'))
     context = {
         'allStaff': allStaff,
+        'page_obj': allStaff,
         'page_title': 'Manage Staff'
     }
     return render(request, "hod_template/manage_staff.html", context)
 
 
 def manage_student(request):
-    students = CustomUser.objects.filter(user_type=3)
+    students = paginate(request, CustomUser.objects.filter(user_type=3).select_related('student', 'student__course', 'student__session').order_by('id'))
     context = {
         'students': students,
+        'page_obj': students,
         'page_title': 'Manage Students'
     }
     return render(request, "hod_template/manage_student.html", context)
 
 
 def manage_course(request):
-    courses = Course.objects.all()
+    courses = paginate(request, Course.objects.order_by('id'))
     context = {
         'courses': courses,
+        'page_obj': courses,
         'page_title': 'Manage Courses'
     }
     return render(request, "hod_template/manage_course.html", context)
 
 
 def manage_subject(request):
-    subjects = Subject.objects.all()
+    subjects = paginate(request, Subject.objects.order_by('id'))
     context = {
         'subjects': subjects,
+        'page_obj': subjects,
         'page_title': 'Manage Subjects'
     }
     return render(request, "hod_template/manage_subject.html", context)
@@ -208,7 +222,6 @@ def edit_staff(request, staff_id):
             first_name = form.cleaned_data.get('first_name')
             last_name = form.cleaned_data.get('last_name')
             address = form.cleaned_data.get('address')
-            username = form.cleaned_data.get('username')
             email = form.cleaned_data.get('email')
             gender = form.cleaned_data.get('gender')
             password = form.cleaned_data.get('password') or None
@@ -216,11 +229,10 @@ def edit_staff(request, staff_id):
             passport = request.FILES.get('profile_pic') or None
             try:
                 user = CustomUser.objects.get(id=staff.admin.id)
-                user.username = username
                 user.email = email
-                if password != None:
+                if password is not None:
                     user.set_password(password)
-                if passport != None:
+                if passport is not None:
                     fs = FileSystemStorage()
                     filename = fs.save(passport.name, passport)
                     passport_url = fs.url(filename)
@@ -235,9 +247,10 @@ def edit_staff(request, staff_id):
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_staff', args=[staff_id]))
             except Exception as e:
+                logger.exception('Unhandled error in edit_staff')
                 messages.error(request, "Could Not Update " + str(e))
         else:
-            messages.error(request, "Please fil form properly")
+            messages.error(request, "Please fill the form properly")
     else:
         user = CustomUser.objects.get(id=staff_id)
         staff = Staff.objects.get(id=user.id)
@@ -257,7 +270,6 @@ def edit_student(request, student_id):
             first_name = form.cleaned_data.get('first_name')
             last_name = form.cleaned_data.get('last_name')
             address = form.cleaned_data.get('address')
-            username = form.cleaned_data.get('username')
             email = form.cleaned_data.get('email')
             gender = form.cleaned_data.get('gender')
             password = form.cleaned_data.get('password') or None
@@ -266,14 +278,13 @@ def edit_student(request, student_id):
             passport = request.FILES.get('profile_pic') or None
             try:
                 user = CustomUser.objects.get(id=student.admin.id)
-                if passport != None:
+                if passport is not None:
                     fs = FileSystemStorage()
                     filename = fs.save(passport.name, passport)
                     passport_url = fs.url(filename)
                     user.profile_pic = passport_url
-                user.username = username
                 user.email = email
-                if password != None:
+                if password is not None:
                     user.set_password(password)
                 user.first_name = first_name
                 user.last_name = last_name
@@ -286,6 +297,7 @@ def edit_student(request, student_id):
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_student', args=[student_id]))
             except Exception as e:
+                logger.exception('Unhandled error in edit_student')
                 messages.error(request, "Could Not Update " + str(e))
         else:
             messages.error(request, "Please Fill Form Properly!")
@@ -310,6 +322,7 @@ def edit_course(request, course_id):
                 course.save()
                 messages.success(request, "Successfully Updated")
             except:
+                logger.exception('Unhandled error in edit_course')
                 messages.error(request, "Could Not Update")
         else:
             messages.error(request, "Could Not Update")
@@ -339,6 +352,7 @@ def edit_subject(request, subject_id):
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_subject', args=[subject_id]))
             except Exception as e:
+                logger.exception('Unhandled error in edit_subject')
                 messages.error(request, "Could Not Add " + str(e))
         else:
             messages.error(request, "Fill Form Properly")
@@ -355,6 +369,7 @@ def add_session(request):
                 messages.success(request, "Session Created")
                 return redirect(reverse('add_session'))
             except Exception as e:
+                logger.exception('Unhandled error in add_session')
                 messages.error(request, 'Could Not Add ' + str(e))
         else:
             messages.error(request, 'Fill Form Properly ')
@@ -362,8 +377,8 @@ def add_session(request):
 
 
 def manage_session(request):
-    sessions = Session.objects.all()
-    context = {'sessions': sessions, 'page_title': 'Manage Sessions'}
+    sessions = paginate(request, Session.objects.order_by('id'))
+    context = {'sessions': sessions, 'page_obj': sessions, 'page_title': 'Manage Sessions'}
     return render(request, "hod_template/manage_session.html", context)
 
 
@@ -379,6 +394,7 @@ def edit_session(request, session_id):
                 messages.success(request, "Session Updated")
                 return redirect(reverse('edit_session', args=[session_id]))
             except Exception as e:
+                logger.exception('Unhandled error in edit_session')
                 messages.error(
                     request, "Session Could Not Be Updated " + str(e))
                 return render(request, "hod_template/edit_session_template.html", context)
@@ -390,7 +406,6 @@ def edit_session(request, session_id):
         return render(request, "hod_template/edit_session_template.html", context)
 
 
-@csrf_exempt
 def check_email_availability(request):
     email = request.POST.get("email")
     try:
@@ -399,15 +414,16 @@ def check_email_availability(request):
             return HttpResponse(True)
         return HttpResponse(False)
     except Exception as e:
+        logger.exception('Unhandled error in check_email_availability')
         return HttpResponse(False)
 
 
-@csrf_exempt
 def student_feedback_message(request):
     if request.method != 'POST':
-        feedbacks = FeedbackStudent.objects.all()
+        feedbacks = paginate(request, FeedbackStudent.objects.order_by('id'))
         context = {
             'feedbacks': feedbacks,
+            'page_obj': feedbacks,
             'page_title': 'Student Feedback Messages'
         }
         return render(request, 'hod_template/student_feedback_template.html', context)
@@ -420,15 +436,16 @@ def student_feedback_message(request):
             feedback.save()
             return HttpResponse(True)
         except Exception as e:
+            logger.exception('Unhandled error in student_feedback_message')
             return HttpResponse(False)
 
 
-@csrf_exempt
 def staff_feedback_message(request):
     if request.method != 'POST':
-        feedbacks = FeedbackStaff.objects.all()
+        feedbacks = paginate(request, FeedbackStaff.objects.order_by('id'))
         context = {
             'feedbacks': feedbacks,
+            'page_obj': feedbacks,
             'page_title': 'Staff Feedback Messages'
         }
         return render(request, 'hod_template/staff_feedback_template.html', context)
@@ -441,15 +458,16 @@ def staff_feedback_message(request):
             feedback.save()
             return HttpResponse(True)
         except Exception as e:
+            logger.exception('Unhandled error in staff_feedback_message')
             return HttpResponse(False)
 
 
-@csrf_exempt
 def view_staff_leave(request):
     if request.method != 'POST':
-        allLeave = LeaveReportStaff.objects.all()
+        allLeave = paginate(request, LeaveReportStaff.objects.order_by('id'))
         context = {
             'allLeave': allLeave,
+            'page_obj': allLeave,
             'page_title': 'Leave Applications From Staff'
         }
         return render(request, "hod_template/staff_leave_view.html", context)
@@ -466,15 +484,16 @@ def view_staff_leave(request):
             leave.save()
             return HttpResponse(True)
         except Exception as e:
-            return False
+            logger.exception("Failed to update staff leave status")
+            return HttpResponse(False)
 
 
-@csrf_exempt
 def view_student_leave(request):
     if request.method != 'POST':
-        allLeave = LeaveReportStudent.objects.all()
+        allLeave = paginate(request, LeaveReportStudent.objects.order_by('id'))
         context = {
             'allLeave': allLeave,
+            'page_obj': allLeave,
             'page_title': 'Leave Applications From Students'
         }
         return render(request, "hod_template/student_leave_view.html", context)
@@ -491,7 +510,8 @@ def view_student_leave(request):
             leave.save()
             return HttpResponse(True)
         except Exception as e:
-            return False
+            logger.exception("Failed to update student leave status")
+            return HttpResponse(False)
 
 
 def admin_view_attendance(request):
@@ -506,7 +526,6 @@ def admin_view_attendance(request):
     return render(request, "hod_template/admin_view_attendance.html", context)
 
 
-@csrf_exempt
 def get_admin_attendance(request):
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
@@ -527,7 +546,8 @@ def get_admin_attendance(request):
             json_data.append(data)
         return JsonResponse(json.dumps(json_data), safe=False)
     except Exception as e:
-        return None
+        logger.exception("Failed to fetch admin attendance")
+        return JsonResponse({'error': str(e)}, status=400)
 
 
 def admin_view_profile(request):
@@ -545,9 +565,9 @@ def admin_view_profile(request):
                 password = form.cleaned_data.get('password') or None
                 passport = request.FILES.get('profile_pic') or None
                 custom_user = admin.admin
-                if password != None:
+                if password is not None:
                     custom_user.set_password(password)
-                if passport != None:
+                if passport is not None:
                     fs = FileSystemStorage()
                     filename = fs.save(passport.name, passport)
                     passport_url = fs.url(filename)
@@ -560,8 +580,9 @@ def admin_view_profile(request):
             else:
                 messages.error(request, "Invalid Data Provided")
         except Exception as e:
+            logger.exception('Unhandled error in admin_view_profile')
             messages.error(
-                request, "Error Occured While Updating Profile " + str(e))
+                request, "Error Occurred While Updating Profile " + str(e))
     return render(request, "hod_template/admin_view_profile.html", context)
 
 
@@ -583,7 +604,6 @@ def admin_notify_student(request):
     return render(request, "hod_template/student_notification.html", context)
 
 
-@csrf_exempt
 def send_student_notification(request):
     id = request.POST.get('id')
     message = request.POST.get('message')
@@ -599,18 +619,17 @@ def send_student_notification(request):
             },
             'to': student.admin.fcm_token
         }
-        headers = {'Authorization':
-                   'key=AAAA3Bm8j_M:APA91bElZlOLetwV696SoEtgzpJr2qbxBfxVBfDWFiopBWzfCfzQp2nRyC7_A2mlukZEHV4g1AmyC6P_HonvSkY2YyliKt5tT3fe_1lrKod2Daigzhb2xnYQMxUWjCAIQcUexAMPZePB',
+        headers = {'Authorization': 'key=' + settings.FCM_SERVER_KEY,
                    'Content-Type': 'application/json'}
         data = requests.post(url, data=json.dumps(body), headers=headers)
         notification = NotificationStudent(student=student, message=message)
         notification.save()
         return HttpResponse("True")
     except Exception as e:
+        logger.exception('Unhandled error in send_student_notification')
         return HttpResponse("False")
 
 
-@csrf_exempt
 def send_staff_notification(request):
     id = request.POST.get('id')
     message = request.POST.get('message')
@@ -626,14 +645,14 @@ def send_staff_notification(request):
             },
             'to': staff.admin.fcm_token
         }
-        headers = {'Authorization':
-                   'key=AAAA3Bm8j_M:APA91bElZlOLetwV696SoEtgzpJr2qbxBfxVBfDWFiopBWzfCfzQp2nRyC7_A2mlukZEHV4g1AmyC6P_HonvSkY2YyliKt5tT3fe_1lrKod2Daigzhb2xnYQMxUWjCAIQcUexAMPZePB',
+        headers = {'Authorization': 'key=' + settings.FCM_SERVER_KEY,
                    'Content-Type': 'application/json'}
         data = requests.post(url, data=json.dumps(body), headers=headers)
         notification = NotificationStaff(staff=staff, message=message)
         notification.save()
         return HttpResponse("True")
     except Exception as e:
+        logger.exception('Unhandled error in send_staff_notification')
         return HttpResponse("False")
 
 
@@ -657,6 +676,7 @@ def delete_course(request, course_id):
         course.delete()
         messages.success(request, "Course deleted successfully!")
     except Exception:
+        logger.exception('Unhandled error in delete_course')
         messages.error(
             request, "Sorry, some students are assigned to this course already. Kindly change the affected student course and try again")
     return redirect(reverse('manage_course'))
@@ -675,6 +695,7 @@ def delete_session(request, session_id):
         session.delete()
         messages.success(request, "Session deleted successfully!")
     except Exception:
+        logger.exception('Unhandled error in delete_session')
         messages.error(
             request, "There are students assigned to this session. Please move them to another session.")
     return redirect(reverse('manage_session'))

@@ -179,12 +179,14 @@ class StaffEditForm(CustomUserForm):
 
 
 class EditResultForm(FormSettings):
-    session_list = Session.objects.all()
     session_year = forms.ModelChoiceField(
-        label="Session Year", queryset=session_list, required=True)
+        label="Session Year", queryset=Session.objects.none(), required=True)
 
     def __init__(self, *args, **kwargs):
         super(EditResultForm, self).__init__(*args, **kwargs)
+        # Set per-request rather than as a class attribute, so newly added
+        # sessions show up without needing a server restart.
+        self.fields['session_year'].queryset = Session.objects.all()
 
     class Meta:
         model = StudentResult

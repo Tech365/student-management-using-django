@@ -1,17 +1,22 @@
 import json
+import logging
 import math
 from datetime import datetime
 
 from django.contrib import messages
 from django.core.files.storage import FileSystemStorage
+from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import (HttpResponseRedirect, get_object_or_404,
-                              redirect, render)
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.csrf import csrf_exempt
 
-from .forms import *
-from .models import *
+from .forms import (FeedbackStudentForm, LeaveReportStudentForm,
+                    StudentEditForm)
+from .models import (Attendance, AttendanceReport, Course, CustomUser,
+                     FeedbackStudent, LeaveReportStudent, NotificationStudent,
+                     Student, StudentResult, Subject)
+
+logger = logging.getLogger(__name__)
 
 
 def student_home(request):
@@ -24,19 +29,16 @@ def student_home(request):
     else:
         percent_present = math.floor((total_present/total_attendance) * 100)
         percent_absent = math.ceil(100 - percent_present)
-    subject_name = []
-    data_present = []
-    data_absent = []
     subjects = Subject.objects.filter(course=student.course)
-    for subject in subjects:
-        attendance = Attendance.objects.filter(subject=subject)
-        present_count = AttendanceReport.objects.filter(
-            attendance__in=attendance, status=True, student=student).count()
-        absent_count = AttendanceReport.objects.filter(
-            attendance__in=attendance, status=False, student=student).count()
-        subject_name.append(subject.name)
-        data_present.append(present_count)
-        data_absent.append(absent_count)
+    counts_by_subject = {
+        row['attendance__subject']: row
+        for row in AttendanceReport.objects.filter(student=student, attendance__subject__in=subjects)
+        .values('attendance__subject')
+        .annotate(present=Count('id', filter=Q(status=True)), absent=Count('id', filter=Q(status=False)))
+    }
+    subject_name = [subject.name for subject in subjects]
+    data_present = [counts_by_subject.get(subject.id, {}).get('present', 0) for subject in subjects]
+    data_absent = [counts_by_subject.get(subject.id, {}).get('absent', 0) for subject in subjects]
     context = {
         'total_attendance': total_attendance,
         'percent_present': percent_present,
@@ -52,7 +54,6 @@ def student_home(request):
     return render(request, 'student_template/home_content.html', context)
 
 
-@ csrf_exempt
 def student_view_attendance(request):
     student = get_object_or_404(Student, admin=request.user)
     if request.method != 'POST':
@@ -83,7 +84,8 @@ def student_view_attendance(request):
                 json_data.append(data)
             return JsonResponse(json.dumps(json_data), safe=False)
         except Exception as e:
-            return None
+            logger.exception("Failed to fetch student attendance")
+            return JsonResponse({'error': str(e)}, status=400)
 
 
 def student_apply_leave(request):
@@ -104,6 +106,7 @@ def student_apply_leave(request):
                     request, "Application for leave has been submitted for review")
                 return redirect(reverse('student_apply_leave'))
             except Exception:
+                logger.exception('Unhandled error in student_apply_leave')
                 messages.error(request, "Could not submit")
         else:
             messages.error(request, "Form has errors!")
@@ -129,6 +132,7 @@ def student_feedback(request):
                     request, "Feedback submitted for review")
                 return redirect(reverse('student_feedback'))
             except Exception:
+                logger.exception('Unhandled error in student_feedback')
                 messages.error(request, "Could not Submit!")
         else:
             messages.error(request, "Form has errors!")
@@ -152,9 +156,9 @@ def student_view_profile(request):
                 gender = form.cleaned_data.get('gender')
                 passport = request.FILES.get('profile_pic') or None
                 admin = student.admin
-                if password != None:
+                if password is not None:
                     admin.set_password(password)
-                if passport != None:
+                if passport is not None:
                     fs = FileSystemStorage()
                     filename = fs.save(passport.name, passport)
                     passport_url = fs.url(filename)
@@ -170,12 +174,12 @@ def student_view_profile(request):
             else:
                 messages.error(request, "Invalid Data Provided")
         except Exception as e:
-            messages.error(request, "Error Occured While Updating Profile " + str(e))
+            logger.exception('Unhandled error in student_view_profile')
+            messages.error(request, "Error Occurred While Updating Profile " + str(e))
 
     return render(request, "student_template/student_view_profile.html", context)
 
 
-@csrf_exempt
 def student_fcmtoken(request):
     token = request.POST.get('token')
     student_user = get_object_or_404(CustomUser, id=request.user.id)
@@ -184,6 +188,7 @@ def student_fcmtoken(request):
         student_user.save()
         return HttpResponse("True")
     except Exception as e:
+        logger.exception('Unhandled error in student_fcmtoken')
         return HttpResponse("False")
 
 

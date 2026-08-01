@@ -29,12 +29,14 @@
     <link rel="stylesheet" href="{% static 'plugins/summernote/summernote-bs4.css'%} ">
     <!-- Google Font: Source Sans Pro -->
     <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700" rel="stylesheet">
+    {% include "includes/pwa_meta.html" %}
     {% block custom_css %}
 
     {% endblock custom_css %}
 </head>
 
 <body class="hold-transition sidebar-mini layout-fixed">
+    {% csrf_token %}
     <div class="wrapper">
 
         <!-- Navbar -->
@@ -116,6 +118,27 @@
     <!-- ./wrapper -->
     <!-- jQuery -->
     <script src="{% static 'plugins/jquery/jquery.min.js'%} "></script>
+    <!-- Attach the CSRF token to every AJAX request so views don't need
+         @csrf_exempt (see https://docs.djangoproject.com/en/stable/howto/csrf/) -->
+    <script>
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        $.ajaxSetup({
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+    </script>
     <!-- jQuery UI 1.11.4 -->
     <script src="{% static 'plugins/jquery-ui/jquery-ui.min.js'%} "></script>
     <!-- Resolve conflict in jQuery UI tooltip with Bootstrap tooltip -->
@@ -151,6 +174,7 @@
     {% block custom_js %}
 
     {% endblock custom_js %}
+    {% include "includes/pwa_register.html" %}
 </body>
 
 </html>
