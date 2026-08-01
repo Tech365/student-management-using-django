@@ -231,3 +231,16 @@ LOGGING = {
         },
     },
 }
+
+if not DEBUG:
+    # Nginx terminates TLS and forwards this header; without it Django can't
+    # tell the original request was HTTPS (everything to Gunicorn is plain
+    # HTTP over the unix socket).
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Start conservative (1 hour) rather than the usual 1-year recommendation
+    # — raise this once HTTPS has been confirmed stable for a while, since a
+    # long HSTS value is hard to walk back if something's misconfigured.
+    SECURE_HSTS_SECONDS = 3600
