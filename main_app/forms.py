@@ -191,3 +191,16 @@ class EditResultForm(FormSettings):
     class Meta:
         model = StudentResult
         fields = ['session_year', 'subject', 'student', 'test', 'exam']
+
+
+class CSVUploadForm(forms.Form):
+    csv_file = forms.FileField(
+        label="CSV File",
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.csv'}),
+    )
+
+    def clean_csv_file(self):
+        csv_file = self.cleaned_data['csv_file']
+        if not csv_file.name.lower().endswith('.csv'):
+            raise forms.ValidationError("Please upload a .csv file.")
+        return csv_file

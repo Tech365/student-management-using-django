@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 
 import requests
 from django.conf import settings
@@ -10,14 +11,17 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
+from django.utils.crypto import get_random_string
 
-from .forms import (AdminForm, CourseForm, SessionForm, StaffForm,
-                    StudentForm, SubjectForm)
+from .forms import (AdminForm, CourseForm, CSVUploadForm, SessionForm,
+                    StaffForm, StudentForm, SubjectForm)
 from .models import (Admin, Attendance, AttendanceReport, Course, CustomUser,
                      FeedbackStaff, FeedbackStudent, LeaveReportStaff,
                      LeaveReportStudent, NotificationStaff,
                      NotificationStudent, Session, Staff, Student, Subject)
-from .utils import paginate
+from .utils import paginate, read_csv_rows
+
+DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +171,190 @@ def add_subject(request):
             messages.error(request, "Fill Form Properly")
 
     return render(request, 'hod_template/add_subject_template.html', context)
+
+
+def bulk_upload_courses(request):
+    form = CSVUploadForm()
+    results = None
+    if request.method == 'POST':
+        form = CSVUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            results = []
+            for row_number, row in read_csv_rows(request.FILES['csv_file']):
+                name = row.get('name') or ''
+                if not name:
+                    results.append({'row': row_number, 'status': 'error', 'message': 'Missing name'})
+                    continue
+                if Course.objects.filter(name__iexact=name).exists():
+                    results.append({'row': row_number, 'status': 'skipped', 'message': f'"{name}" already exists'})
+                    continue
+                try:
+                    Course.objects.create(name=name)
+                    results.append({'row': row_number, 'status': 'success', 'message': f'Created "{name}"'})
+                except Exception as e:
+                    logger.exception('Unhandled error in bulk_upload_courses row %s', row_number)
+                    results.append({'row': row_number, 'status': 'error', 'message': str(e)})
+            messages.info(request, f"Processed {len(results)} row(s).")
+    context = {'form': form, 'results': results, 'page_title': 'Bulk Upload Courses'}
+    return render(request, 'hod_template/bulk_upload_courses.html', context)
+
+
+def bulk_upload_subjects(request):
+    form = CSVUploadForm()
+    results = None
+    if request.method == 'POST':
+        form = CSVUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            results = []
+            for row_number, row in read_csv_rows(request.FILES['csv_file']):
+                name = row.get('name') or ''
+                staff_email = (row.get('staff_email') or '').lower()
+                course_name = row.get('course') or ''
+                missing = [f for f, v in [('name', name), ('staff_email', staff_email), ('course', course_name)] if not v]
+                if missing:
+                    results.append({'row': row_number, 'status': 'error', 'message': f"Missing {', '.join(missing)}"})
+                    continue
+                staff = Staff.objects.filter(admin__email__iexact=staff_email).first()
+                if staff is None:
+                    results.append({'row': row_number, 'status': 'error', 'message': f'No staff with email "{staff_email}"'})
+                    continue
+                course = Course.objects.filter(name__iexact=course_name).first()
+                if course is None:
+                    results.append({'row': row_number, 'status': 'error', 'message': f'No course named "{course_name}"'})
+                    continue
+                if Subject.objects.filter(name__iexact=name, course=course).exists():
+                    results.append({'row': row_number, 'status': 'skipped', 'message': f'"{name}" already exists for {course_name}'})
+                    continue
+                try:
+                    Subject.objects.create(name=name, staff=staff, course=course)
+                    results.append({'row': row_number, 'status': 'success', 'message': f'Created "{name}"'})
+                except Exception as e:
+                    logger.exception('Unhandled error in bulk_upload_subjects row %s', row_number)
+                    results.append({'row': row_number, 'status': 'error', 'message': str(e)})
+            messages.info(request, f"Processed {len(results)} row(s).")
+    context = {'form': form, 'results': results, 'page_title': 'Bulk Upload Subjects'}
+    return render(request, 'hod_template/bulk_upload_subjects.html', context)
+
+
+def bulk_upload_staff(request):
+    form = CSVUploadForm()
+    results = None
+    if request.method == 'POST':
+        form = CSVUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            results = []
+            for row_number, row in read_csv_rows(request.FILES['csv_file']):
+                first_name = row.get('first_name') or ''
+                last_name = row.get('last_name') or ''
+                email = (row.get('email') or '').lower()
+                gender = (row.get('gender') or '').upper()
+                address = row.get('address') or ''
+                course_name = row.get('course') or ''
+
+                missing = [f for f, v in [('first_name', first_name), ('last_name', last_name),
+                                           ('email', email), ('gender', gender), ('course', course_name)] if not v]
+                if missing:
+                    results.append({'row': row_number, 'status': 'error', 'message': f"Missing {', '.join(missing)}"})
+                    continue
+                if gender not in ('M', 'F'):
+                    results.append({'row': row_number, 'status': 'error', 'message': f'Gender must be M or F, got "{gender}"'})
+                    continue
+                if CustomUser.objects.filter(email=email).exists():
+                    results.append({'row': row_number, 'status': 'skipped', 'message': f'"{email}" already registered'})
+                    continue
+                course = Course.objects.filter(name__iexact=course_name).first()
+                if course is None:
+                    results.append({'row': row_number, 'status': 'error', 'message': f'No course named "{course_name}"'})
+                    continue
+                try:
+                    password = get_random_string(10)
+                    user = CustomUser.objects.create_user(
+                        email=email, password=password, user_type=2,
+                        first_name=first_name, last_name=last_name,
+                        profile_pic=static(DEFAULT_PROFILE_PIC),
+                    )
+                    user.gender = gender
+                    user.address = address
+                    user.save()
+                    user.staff.course = course
+                    user.staff.save()
+                    results.append({'row': row_number, 'status': 'success',
+                                     'message': f'Created — temporary password: {password}'})
+                except Exception as e:
+                    logger.exception('Unhandled error in bulk_upload_staff row %s', row_number)
+                    results.append({'row': row_number, 'status': 'error', 'message': str(e)})
+            messages.info(request, f"Processed {len(results)} row(s).")
+    context = {'form': form, 'results': results, 'page_title': 'Bulk Upload Staff'}
+    return render(request, 'hod_template/bulk_upload_staff.html', context)
+
+
+def bulk_upload_students(request):
+    form = CSVUploadForm()
+    results = None
+    if request.method == 'POST':
+        form = CSVUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            results = []
+            for row_number, row in read_csv_rows(request.FILES['csv_file']):
+                first_name = row.get('first_name') or ''
+                last_name = row.get('last_name') or ''
+                email = (row.get('email') or '').lower()
+                gender = (row.get('gender') or '').upper()
+                address = row.get('address') or ''
+                course_name = row.get('course') or ''
+                session_start = row.get('session_start_year') or ''
+                session_end = row.get('session_end_year') or ''
+
+                missing = [f for f, v in [('first_name', first_name), ('last_name', last_name),
+                                           ('email', email), ('gender', gender), ('course', course_name),
+                                           ('session_start_year', session_start),
+                                           ('session_end_year', session_end)] if not v]
+                if missing:
+                    results.append({'row': row_number, 'status': 'error', 'message': f"Missing {', '.join(missing)}"})
+                    continue
+                if gender not in ('M', 'F'):
+                    results.append({'row': row_number, 'status': 'error', 'message': f'Gender must be M or F, got "{gender}"'})
+                    continue
+                try:
+                    datetime.strptime(session_start, "%Y-%m-%d")
+                    datetime.strptime(session_end, "%Y-%m-%d")
+                except ValueError:
+                    results.append({'row': row_number, 'status': 'error',
+                                     'message': 'Session dates must be YYYY-MM-DD'})
+                    continue
+                if CustomUser.objects.filter(email=email).exists():
+                    results.append({'row': row_number, 'status': 'skipped', 'message': f'"{email}" already registered'})
+                    continue
+                course = Course.objects.filter(name__iexact=course_name).first()
+                if course is None:
+                    results.append({'row': row_number, 'status': 'error', 'message': f'No course named "{course_name}"'})
+                    continue
+                session = Session.objects.filter(start_year=session_start, end_year=session_end).first()
+                if session is None:
+                    results.append({'row': row_number, 'status': 'error',
+                                     'message': f'No session from {session_start} to {session_end}'})
+                    continue
+                try:
+                    password = get_random_string(10)
+                    user = CustomUser.objects.create_user(
+                        email=email, password=password, user_type=3,
+                        first_name=first_name, last_name=last_name,
+                        profile_pic=static(DEFAULT_PROFILE_PIC),
+                    )
+                    user.gender = gender
+                    user.address = address
+                    user.save()
+                    user.student.course = course
+                    user.student.session = session
+                    user.student.save()
+                    results.append({'row': row_number, 'status': 'success',
+                                     'message': f'Created — temporary password: {password}'})
+                except Exception as e:
+                    logger.exception('Unhandled error in bulk_upload_students row %s', row_number)
+                    results.append({'row': row_number, 'status': 'error', 'message': str(e)})
+            messages.info(request, f"Processed {len(results)} row(s).")
+    context = {'form': form, 'results': results, 'page_title': 'Bulk Upload Students'}
+    return render(request, 'hod_template/bulk_upload_students.html', context)
 
 
 def manage_staff(request):

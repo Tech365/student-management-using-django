@@ -1,0 +1,39 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <form method="POST" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="card-body">
+                            <p>
+                                Upload a CSV file with columns <code>name</code>, <code>staff_email</code>
+                                (must match an existing staff member's email) and <code>course</code>
+                                (must match an existing course name).
+                                <a href="{% static 'samples/subjects_template.csv' %}" download>Download a sample CSV</a>.
+                            </p>
+                            {{ form.csv_file.errors }}
+                            <div class="form-group">
+                                {{ form.csv_file }}
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <button type="submit" class="btn btn-primary">Upload</button>
+                            <a href="{% url 'add_subject' %}" class="btn btn-secondary">Back to Add Subject</a>
+                        </div>
+                    </form>
+                    {% include "includes/bulk_upload_results.html" %}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

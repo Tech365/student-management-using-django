@@ -1,0 +1,43 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <form method="POST" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="card-body">
+                            <p>
+                                Upload a CSV file with columns <code>first_name</code>, <code>last_name</code>,
+                                <code>email</code>, <code>gender</code> (M or F), <code>address</code>,
+                                <code>course</code> (must match an existing course name), and
+                                <code>session_start_year</code> / <code>session_end_year</code>
+                                (format YYYY-MM-DD, must match an existing session).
+                                A random password is generated for each new account and shown in the results below —
+                                make sure to save it, it won't be shown again.
+                                <a href="{% static 'samples/students_template.csv' %}" download>Download a sample CSV</a>.
+                            </p>
+                            {{ form.csv_file.errors }}
+                            <div class="form-group">
+                                {{ form.csv_file }}
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <button type="submit" class="btn btn-primary">Upload</button>
+                            <a href="{% url 'add_student' %}" class="btn btn-secondary">Back to Add Student</a>
+                        </div>
+                    </form>
+                    {% include "includes/bulk_upload_results.html" %}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

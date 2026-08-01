@@ -26,6 +26,11 @@
                 <div class="card card-primary">
                     <div class="card-header">
                         <h3 class="card-title">{{page_title}}</h3>
+                        <div class="card-tools">
+                            <a href="{% url 'bulk_upload_students' %}" class="btn btn-outline-light btn-sm">
+                                <i class="fas fa-file-upload"></i> Bulk Upload
+                            </a>
+                        </div>
                     </div>
 
                     {% include "main_app/form_template.html" with messages=messages  form=form button_text="Add Student"%}
