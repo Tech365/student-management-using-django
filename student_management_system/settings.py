@@ -194,11 +194,15 @@ EMAIL_USE_TLS = True
 # The manifest storage requires `collectstatic` to have run (it looks up
 # cache-busted filenames in a manifest). That's fine in production but is
 # an unnecessary local-dev/test requirement, so fall back to plain storage
-# when DEBUG is on.
+# when DEBUG is on. We also avoid the *manifest* variant in production：
+# some of the bundled AdminLTE/jQuery-UI vendor CSS has url() references
+# that WhiteNoise's manifest builder can't resolve, which fails the whole
+# collectstatic run. CompressedStaticFilesStorage still gzip/brotli
+# compresses everything, it just skips the hash-manifest step.
 if DEBUG:
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 else:
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 prod_db = dj_database_url.config(conn_max_age=500)
 DATABASES['default'].update(prod_db)
