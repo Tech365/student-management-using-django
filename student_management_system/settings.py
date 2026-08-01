@@ -57,7 +57,6 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
 
 # Secret keys for third-party services. Never hardcode these.
-RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
 FCM_SERVER_KEY = os.environ.get('FCM_SERVER_KEY', '')
 
 
