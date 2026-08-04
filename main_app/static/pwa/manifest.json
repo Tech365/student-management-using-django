@@ -1,6 +1,6 @@
 {
-  "name": "Student Management System",
-  "short_name": "Student MS",
+  "name": "Madrasa Jamaliyah",
+  "short_name": "Madrasa Jamaliyah",
   "description": "Manage students, staff, attendance, results and leave.",
   "start_url": "/",
   "scope": "/",
