@@ -134,4 +134,18 @@ urlpatterns = [
     path('student/view/result/', student_views.student_view_result,
          name='student_view_result'),
 
+    # Reports
+    path("reports/attendance/", hod_views.report_attendance_summary,
+         name='report_attendance_summary'),
+    path("reports/attendance/csv/", hod_views.report_attendance_summary_csv,
+         name='report_attendance_summary_csv'),
+    path("reports/student-attendance/", hod_views.report_student_attendance,
+         name='report_student_attendance'),
+    path("reports/student-attendance/csv/", hod_views.report_student_attendance_csv,
+         name='report_student_attendance_csv'),
+    path("reports/leave/", hod_views.report_leave, name='report_leave'),
+    path("reports/leave/csv/", hod_views.report_leave_csv, name='report_leave_csv'),
+    path("reports/results/", hod_views.report_results, name='report_results'),
+    path("reports/results/csv/", hod_views.report_results_csv, name='report_results_csv'),
+
 ]

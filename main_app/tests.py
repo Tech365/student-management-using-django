@@ -6,7 +6,8 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from .models import (Attendance, AttendanceReport, Course, CustomUser,
-                     Session, Staff, Student, StudentResult, Subject)
+                     LeaveReportStaff, LeaveReportStudent, Session, Staff,
+                     Student, StudentResult, Subject)
 
 PASSWORD = "pass1234"
 
@@ -394,3 +395,149 @@ class DeleteWithAttendanceHistoryTests(TestCase):
         response = self.client.get(reverse('delete_session', args=[self.session.id]))
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Session.objects.filter(id=self.session.id).exists())
+
+
+class ReportPermissionTests(TestCase):
+    def test_staff_cannot_reach_reports(self):
+        course = make_course("Report Perm Course")
+        make_staff("report_perm_staff@example.com", course)
+        client = Client()
+        client.login(username="report_perm_staff@example.com", password=PASSWORD)
+        response = client.get(reverse('report_attendance_summary'))
+        self.assertRedirects(response, reverse('staff_home'))
+
+
+class AttendanceSummaryReportTests(TestCase):
+    def setUp(self):
+        make_admin("report_admin_attendance@example.com")
+        self.client.login(username="report_admin_attendance@example.com", password=PASSWORD)
+        self.course = make_course("Report Course")
+        self.session = make_session()
+        self.staff = make_staff("report_teacher@example.com", self.course)
+        self.subject = Subject.objects.create(name="Report Subject", staff=self.staff, course=self.course)
+        self.student = make_student("report_student@example.com", self.course, self.session)
+        attendance = Attendance.objects.create(session=self.session, subject=self.subject, date=datetime.date(2024, 6, 15))
+        AttendanceReport.objects.create(student=self.student, attendance=attendance, status=True)
+        other_student = make_student("report_student2@example.com", self.course, self.session)
+        AttendanceReport.objects.create(student=other_student, attendance=attendance, status=False)
+
+    def test_summary_shows_correct_percentage(self):
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        self.assertEqual(response.status_code, 200)
+        summary = response.context['course_summary']
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0]['total'], 2)
+        self.assertEqual(summary[0]['present'], 1)
+        self.assertEqual(summary[0]['percent'], 50.0)
+
+    def test_csv_export_returns_csv(self):
+        response = self.client.get(reverse('report_attendance_summary_csv'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        body = response.content.decode()
+        self.assertIn('Report Course', body)
+        self.assertIn('50.0%', body)
+
+
+class StudentAttendanceReportTests(TestCase):
+    def setUp(self):
+        make_admin("report_admin_student@example.com")
+        self.client.login(username="report_admin_student@example.com", password=PASSWORD)
+        self.course = make_course("Student Report Course")
+        self.session = make_session()
+        self.staff = make_staff("report_teacher2@example.com", self.course)
+        self.subject = Subject.objects.create(name="Student Report Subject", staff=self.staff, course=self.course)
+        self.student = make_student("report_target_student@example.com", self.course, self.session)
+        attendance = Attendance.objects.create(session=self.session, subject=self.subject, date=datetime.date(2024, 6, 15))
+        AttendanceReport.objects.create(student=self.student, attendance=attendance, status=True)
+
+    def test_no_student_selected_shows_empty_state(self):
+        response = self.client.get(reverse('report_student_attendance'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context['summary'])
+
+    def test_selecting_student_shows_summary(self):
+        response = self.client.get(reverse('report_student_attendance'), {'student': self.student.id})
+        self.assertEqual(response.status_code, 200)
+        summary = response.context['summary']
+        self.assertEqual(summary['total'], 1)
+        self.assertEqual(summary['present'], 1)
+        self.assertEqual(summary['percent'], 100.0)
+
+    def test_csv_requires_student(self):
+        response = self.client.get(reverse('report_student_attendance_csv'))
+        self.assertEqual(response.status_code, 400)
+
+    def test_csv_export_with_student(self):
+        response = self.client.get(reverse('report_student_attendance_csv'), {'student': self.student.id})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Present', response.content.decode())
+
+
+class LeaveReportTests(TestCase):
+    def setUp(self):
+        make_admin("report_admin_leave@example.com")
+        self.client.login(username="report_admin_leave@example.com", password=PASSWORD)
+        course = make_course("Leave Report Course")
+        session = make_session()
+        self.staff = make_staff("report_leave_staff@example.com", course)
+        self.student = make_student("report_leave_student@example.com", course, session)
+        LeaveReportStudent.objects.create(student=self.student, date="2024-06-10", message="Sick", status=0)
+        LeaveReportStaff.objects.create(staff=self.staff, date="2024-06-11", message="Family event", status=1)
+
+    def test_all_records_shown_by_default(self):
+        response = self.client.get(reverse('report_leave'))
+        self.assertEqual(len(response.context['records']), 2)
+
+    def test_filter_by_type_student(self):
+        response = self.client.get(reverse('report_leave'), {'type': 'student'})
+        records = response.context['records']
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['type'], 'Student')
+
+    def test_filter_by_status_pending(self):
+        response = self.client.get(reverse('report_leave'), {'status': 'pending'})
+        records = response.context['records']
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['status_label'], 'Pending')
+
+    def test_csv_export(self):
+        response = self.client.get(reverse('report_leave_csv'))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('Sick', body)
+        self.assertIn('Family event', body)
+
+
+class ResultsReportTests(TestCase):
+    def setUp(self):
+        make_admin("report_admin_results@example.com")
+        self.client.login(username="report_admin_results@example.com", password=PASSWORD)
+        self.course = make_course("Results Report Course")
+        session = make_session()
+        self.staff = make_staff("report_results_staff@example.com", self.course)
+        self.subject = Subject.objects.create(name="Results Report Subject", staff=self.staff, course=self.course)
+        self.student = make_student("report_results_student@example.com", self.course, session)
+        StudentResult.objects.create(student=self.student, subject=self.subject, test=8, exam=16)
+
+    def test_summary_shows_averages(self):
+        response = self.client.get(reverse('report_results'), {'course': self.course.id})
+        summary = response.context['summary']
+        self.assertEqual(summary['count'], 1)
+        self.assertEqual(summary['avg_test'], 8.0)
+        self.assertEqual(summary['avg_exam'], 16.0)
+
+    def test_no_results_gives_no_summary(self):
+        other_course = make_course("Empty Results Course")
+        response = self.client.get(reverse('report_results'), {'course': other_course.id})
+        self.assertIsNone(response.context['summary'])
+
+    def test_csv_export(self):
+        response = self.client.get(reverse('report_results_csv'), {'course': self.course.id})
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('Results Report Subject', body)

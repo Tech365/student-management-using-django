@@ -180,6 +180,36 @@
                     </a>
                 </li>
 
+                <li class="nav-header">REPORTS</li>
+                <li class="nav-item">
+                    {% url 'report_attendance_summary' as report_attendance_summary %}
+                    <a href="{{report_attendance_summary}}" class="nav-link {% if report_attendance_summary == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-chart-bar text-teal"></i>
+                        <p>Attendance Summary</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'report_student_attendance' as report_student_attendance %}
+                    <a href="{{report_student_attendance}}" class="nav-link {% if report_student_attendance == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-chart-line text-teal"></i>
+                        <p>Student Attendance</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'report_leave' as report_leave %}
+                    <a href="{{report_leave}}" class="nav-link {% if report_leave == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-file-alt text-teal"></i>
+                        <p>Leave Report</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'report_results' as report_results %}
+                    <a href="{{report_results}}" class="nav-link {% if report_results == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-chart-pie text-teal"></i>
+                        <p>Results Report</p>
+                    </a>
+                </li>
+
 {% elif request.user.user_type == '2' %}
     <!-- Brand Logo -->
     <a href="#" class="brand-link">

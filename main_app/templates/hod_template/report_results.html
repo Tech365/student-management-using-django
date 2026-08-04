@@ -1,0 +1,103 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" class="form-inline">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Course</label>
+                                <select name="course" class="form-control">
+                                    <option value="">All Courses</option>
+                                    {% for course in courses %}
+                                    <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Subject</label>
+                                <select name="subject" class="form-control">
+                                    <option value="">All Subjects</option>
+                                    {% for subject in subjects %}
+                                    <option value="{{ subject.id }}" {% if selected_subject == subject.id|stringformat:"s" %}selected{% endif %}>{{ subject.course.name }} &mdash; {{ subject.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary mr-2">Filter</button>
+                            <a class="btn btn-outline-secondary"
+                               href="{% url 'report_results_csv' %}?course={{ selected_course }}&subject={{ selected_subject }}">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                        </form>
+                    </div>
+                </div>
+
+                {% if summary %}
+                <div class="row">
+                    <div class="col-md-4 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-info"><i class="fas fa-list"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Results</span>
+                                <span class="info-box-number">{{ summary.count }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-warning"><i class="fas fa-pen"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Average Test</span>
+                                <span class="info-box-number">{{ summary.avg_test }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-success"><i class="fas fa-graduation-cap"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Average Exam</span>
+                                <span class="info-box-number">{{ summary.avg_exam }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Course</th><th>Subject</th><th>Student</th><th>Test</th><th>Exam</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for result in results %}
+                                    <tr>
+                                        <td>{{ result.subject.course.name }}</td>
+                                        <td>{{ result.subject.name }}</td>
+                                        <td>{{ result.student }}</td>
+                                        <td>{{ result.test }}</td>
+                                        <td>{{ result.exam }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="5" class="text-muted">No results match these filters.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

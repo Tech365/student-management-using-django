@@ -1,0 +1,118 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" class="form-inline">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Student</label>
+                                <select name="student" class="form-control" required>
+                                    <option value="">Select a student</option>
+                                    {% for student in students %}
+                                    <option value="{{ student.id }}" {% if selected_student == student.id|stringformat:"s" %}selected{% endif %}>{{ student }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">From</label>
+                                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">To</label>
+                                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                            </div>
+                            <button type="submit" class="btn btn-primary mr-2">View</button>
+                            {% if selected_student %}
+                            <a class="btn btn-outline-secondary"
+                               href="{% url 'report_student_attendance_csv' %}?student={{ selected_student }}&start_date={{ start_date }}&end_date={{ end_date }}">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
+
+                {% if summary %}
+                <div class="row">
+                    <div class="col-md-3 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-info"><i class="fas fa-clipboard-check"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Attendance %</span>
+                                <span class="info-box-number">{{ summary.percent }}%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-success"><i class="fas fa-check"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Present</span>
+                                <span class="info-box-number">{{ summary.present }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-danger"><i class="fas fa-times"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Absent</span>
+                                <span class="info-box-number">{{ summary.absent }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-secondary"><i class="fas fa-list"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Total Records</span>
+                                <span class="info-box-number">{{ summary.total }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><h3 class="card-title">{{ summary.student }} &mdash; Attendance History</h3></div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Date</th><th>Subject</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for record in records %}
+                                    <tr>
+                                        <td>{{ record.attendance.date }}</td>
+                                        <td>{{ record.attendance.subject.name }}</td>
+                                        <td>
+                                            {% if record.status %}
+                                            <span class="badge badge-success">Present</span>
+                                            {% else %}
+                                            <span class="badge badge-danger">Absent</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="3" class="text-muted">No attendance records for this range.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

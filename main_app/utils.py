@@ -2,6 +2,7 @@ import csv
 import io
 
 from django.core.paginator import Paginator
+from django.http import HttpResponse
 
 PAGE_SIZE = 25
 
@@ -27,3 +28,14 @@ def read_csv_rows(uploaded_file):
             (key.strip() if key else key): (value.strip() if value else value)
             for key, value in row.items()
         }
+
+
+def csv_response(filename, header, rows):
+    """Build a downloadable CSV HttpResponse from a header list and an
+    iterable of row tuples/lists."""
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    writer = csv.writer(response)
+    writer.writerow(header)
+    writer.writerows(rows)
+    return response

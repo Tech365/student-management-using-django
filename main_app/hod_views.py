@@ -1,12 +1,12 @@
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import requests
 from django.conf import settings
 from django.contrib import messages
 from django.core.files.storage import FileSystemStorage
-from django.db.models import Count
+from django.db.models import Avg, Count, F, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
@@ -18,10 +18,12 @@ from .forms import (AdminForm, CourseForm, CSVUploadForm, SessionForm,
 from .models import (Admin, Attendance, AttendanceReport, Course, CustomUser,
                      FeedbackStaff, FeedbackStudent, LeaveReportStaff,
                      LeaveReportStudent, NotificationStaff,
-                     NotificationStudent, Session, Staff, Student, Subject)
-from .utils import paginate, read_csv_rows
+                     NotificationStudent, Session, Staff, Student,
+                     StudentResult, Subject)
+from .utils import csv_response, paginate, read_csv_rows
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
+LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
 
 logger = logging.getLogger(__name__)
 
@@ -899,3 +901,242 @@ def delete_session(request, session_id):
         messages.error(
             request, "There are students assigned to this session. Please move them to another session.")
     return redirect(reverse('manage_session'))
+
+
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
+
+def _attendance_summary_data(request):
+    course_id = request.GET.get('course') or ''
+    session_id = request.GET.get('session') or ''
+    start_date = request.GET.get('start_date') or date.today().replace(day=1).isoformat()
+    end_date = request.GET.get('end_date') or date.today().isoformat()
+
+    reports = AttendanceReport.objects.filter(
+        attendance__date__gte=start_date, attendance__date__lte=end_date)
+    if course_id:
+        reports = reports.filter(attendance__subject__course_id=course_id)
+    if session_id:
+        reports = reports.filter(attendance__session_id=session_id)
+
+    def with_percent(rows, key):
+        summary = []
+        for row in rows:
+            total = row['total']
+            present = row['present']
+            summary.append({
+                key: row[key],
+                'total': total,
+                'present': present,
+                'absent': total - present,
+                'percent': round(present / total * 100, 1) if total else 0,
+            })
+        return summary
+
+    by_course = (
+        reports.values(course=F('attendance__subject__course__name'))
+        .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
+        .order_by('course')
+    )
+    by_day = (
+        reports.values(date=F('attendance__date'))
+        .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
+        .order_by('date')
+    )
+
+    return {
+        'course_id': course_id,
+        'session_id': session_id,
+        'start_date': start_date,
+        'end_date': end_date,
+        'course_summary': with_percent(by_course, 'course'),
+        'daily_summary': with_percent(by_day, 'date'),
+    }
+
+
+def report_attendance_summary(request):
+    data = _attendance_summary_data(request)
+    context = {
+        'page_title': 'Attendance Summary Report',
+        'courses': Course.objects.order_by('name'),
+        'sessions': Session.objects.order_by('-start_year'),
+        'selected_course': data['course_id'],
+        'selected_session': data['session_id'],
+        'start_date': data['start_date'],
+        'end_date': data['end_date'],
+        'course_summary': data['course_summary'],
+        'daily_summary': data['daily_summary'],
+    }
+    return render(request, 'hod_template/report_attendance_summary.html', context)
+
+
+def report_attendance_summary_csv(request):
+    data = _attendance_summary_data(request)
+    rows = [(row['course'], row['total'], row['present'], row['absent'], f"{row['percent']}%")
+            for row in data['course_summary']]
+    filename = f"attendance_summary_{data['start_date']}_to_{data['end_date']}.csv"
+    return csv_response(filename, ['Course', 'Total', 'Present', 'Absent', 'Attendance %'], rows)
+
+
+def report_student_attendance(request):
+    student_id = request.GET.get('student') or ''
+    start_date = request.GET.get('start_date') or ''
+    end_date = request.GET.get('end_date') or ''
+
+    records = []
+    summary = None
+    if student_id:
+        student = get_object_or_404(Student, id=student_id)
+        reports = AttendanceReport.objects.filter(student=student).select_related(
+            'attendance', 'attendance__subject')
+        if start_date:
+            reports = reports.filter(attendance__date__gte=start_date)
+        if end_date:
+            reports = reports.filter(attendance__date__lte=end_date)
+        reports = reports.order_by('-attendance__date')
+        total = reports.count()
+        present = reports.filter(status=True).count()
+        summary = {
+            'student': student,
+            'total': total,
+            'present': present,
+            'absent': total - present,
+            'percent': round(present / total * 100, 1) if total else 0,
+        }
+        records = reports
+
+    context = {
+        'page_title': 'Student Attendance History',
+        'students': Student.objects.select_related('admin').order_by('admin__first_name'),
+        'selected_student': student_id,
+        'start_date': start_date,
+        'end_date': end_date,
+        'records': records,
+        'summary': summary,
+    }
+    return render(request, 'hod_template/report_student_attendance.html', context)
+
+
+def report_student_attendance_csv(request):
+    student_id = request.GET.get('student') or ''
+    if not student_id:
+        return HttpResponse("Select a student first.", status=400)
+    student = get_object_or_404(Student, id=student_id)
+    reports = AttendanceReport.objects.filter(student=student).select_related(
+        'attendance', 'attendance__subject')
+    start_date = request.GET.get('start_date') or ''
+    end_date = request.GET.get('end_date') or ''
+    if start_date:
+        reports = reports.filter(attendance__date__gte=start_date)
+    if end_date:
+        reports = reports.filter(attendance__date__lte=end_date)
+    reports = reports.order_by('-attendance__date')
+
+    rows = [(r.attendance.date, r.attendance.subject.name, "Present" if r.status else "Absent")
+            for r in reports]
+    filename = f"attendance_{student.admin.first_name}_{student.admin.last_name}.csv"
+    return csv_response(filename, ['Date', 'Subject', 'Status'], rows)
+
+
+def _leave_report_data(request):
+    leave_type = request.GET.get('type') or 'all'
+    status = request.GET.get('status') or 'all'
+    start_date = request.GET.get('start_date') or ''
+    end_date = request.GET.get('end_date') or ''
+
+    status_map = {'pending': 0, 'approved': 1, 'rejected': -1}
+
+    student_leaves = LeaveReportStudent.objects.select_related('student', 'student__admin')
+    staff_leaves = LeaveReportStaff.objects.select_related('staff', 'staff__admin')
+    if status in status_map:
+        student_leaves = student_leaves.filter(status=status_map[status])
+        staff_leaves = staff_leaves.filter(status=status_map[status])
+    if start_date:
+        student_leaves = student_leaves.filter(date__gte=start_date)
+        staff_leaves = staff_leaves.filter(date__gte=start_date)
+    if end_date:
+        student_leaves = student_leaves.filter(date__lte=end_date)
+        staff_leaves = staff_leaves.filter(date__lte=end_date)
+
+    records = []
+    if leave_type in ('all', 'student'):
+        records += [{
+            'type': 'Student', 'name': str(l.student), 'date': l.date,
+            'message': l.message, 'status_label': LEAVE_STATUS_LABELS.get(l.status, 'Unknown'),
+        } for l in student_leaves]
+    if leave_type in ('all', 'staff'):
+        records += [{
+            'type': 'Staff', 'name': str(l.staff), 'date': l.date,
+            'message': l.message, 'status_label': LEAVE_STATUS_LABELS.get(l.status, 'Unknown'),
+        } for l in staff_leaves]
+    records.sort(key=lambda r: r['date'], reverse=True)
+
+    return {
+        'leave_type': leave_type, 'status': status,
+        'start_date': start_date, 'end_date': end_date,
+        'records': records,
+    }
+
+
+def report_leave(request):
+    data = _leave_report_data(request)
+    context = {
+        'page_title': 'Leave Report',
+        'records': data['records'],
+        'selected_type': data['leave_type'],
+        'selected_status': data['status'],
+        'start_date': data['start_date'],
+        'end_date': data['end_date'],
+    }
+    return render(request, 'hod_template/report_leave.html', context)
+
+
+def report_leave_csv(request):
+    data = _leave_report_data(request)
+    rows = [(r['type'], r['name'], r['date'], r['status_label'], r['message']) for r in data['records']]
+    return csv_response('leave_report.csv', ['Type', 'Name', 'Date', 'Status', 'Message'], rows)
+
+
+def _results_report_data(request):
+    course_id = request.GET.get('course') or ''
+    subject_id = request.GET.get('subject') or ''
+
+    results = StudentResult.objects.select_related('student__admin', 'subject', 'subject__course')
+    if course_id:
+        results = results.filter(subject__course_id=course_id)
+    if subject_id:
+        results = results.filter(subject_id=subject_id)
+    results = results.order_by('subject__course__name', 'subject__name', 'student__admin__first_name')
+
+    summary = None
+    agg = results.aggregate(avg_test=Avg('test'), avg_exam=Avg('exam'), count=Count('id'))
+    if agg['count']:
+        summary = {
+            'count': agg['count'],
+            'avg_test': round(agg['avg_test'], 1),
+            'avg_exam': round(agg['avg_exam'], 1),
+        }
+
+    return {'course_id': course_id, 'subject_id': subject_id, 'results': results, 'summary': summary}
+
+
+def report_results(request):
+    data = _results_report_data(request)
+    context = {
+        'page_title': 'Results Summary Report',
+        'courses': Course.objects.order_by('name'),
+        'subjects': Subject.objects.select_related('course').order_by('course__name', 'name'),
+        'selected_course': data['course_id'],
+        'selected_subject': data['subject_id'],
+        'results': data['results'],
+        'summary': data['summary'],
+    }
+    return render(request, 'hod_template/report_results.html', context)
+
+
+def report_results_csv(request):
+    data = _results_report_data(request)
+    rows = [(r.subject.course.name, r.subject.name, str(r.student), r.test, r.exam)
+            for r in data['results']]
+    return csv_response('results_report.csv', ['Course', 'Subject', 'Student', 'Test', 'Exam'], rows)
