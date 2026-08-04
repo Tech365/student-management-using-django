@@ -347,3 +347,50 @@ class BulkUploadStudentTests(TestCase):
                    "Dup,Student,dup_student@example.com,M,1 Test St,Student Bulk Course,2024-01-01,2024-12-31\n")
         response = self.client.post(reverse('bulk_upload_students'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'skipped')
+
+
+class DeleteWithAttendanceHistoryTests(TestCase):
+    """Regression tests: deleting a student/staff/subject/session that has
+    real attendance history used to 500 (on_delete=DO_NOTHING against a
+    database that actually enforces FK constraints, e.g. Postgres in prod).
+    Deleting should now succeed and clean up the dependent attendance rows."""
+
+    def setUp(self):
+        make_admin("delete_admin@example.com")
+        self.client.login(username="delete_admin@example.com", password=PASSWORD)
+        self.course = make_course("Delete Test Course")
+        self.session = make_session()
+        self.staff = make_staff("delete_teacher@example.com", self.course)
+        self.subject = Subject.objects.create(name="Delete Test Subject", staff=self.staff, course=self.course)
+        self.student = make_student("delete_student@example.com", self.course, self.session)
+        attendance = Attendance.objects.create(session=self.session, subject=self.subject, date=datetime.date(2026, 1, 1))
+        AttendanceReport.objects.create(student=self.student, attendance=attendance, status=True)
+
+    def test_deleting_student_with_attendance_history_succeeds(self):
+        response = self.client.get(reverse('delete_student', args=[self.student.id]))
+        self.assertRedirects(response, reverse('manage_student'))
+        self.assertFalse(Student.objects.filter(id=self.student.id).exists())
+        self.assertFalse(AttendanceReport.objects.filter(student_id=self.student.id).exists())
+
+    def test_deleting_staff_with_attendance_history_succeeds(self):
+        response = self.client.get(reverse('delete_staff', args=[self.staff.id]))
+        self.assertRedirects(response, reverse('manage_staff'))
+        self.assertFalse(Staff.objects.filter(id=self.staff.id).exists())
+        self.assertFalse(Subject.objects.filter(id=self.subject.id).exists())
+        self.assertFalse(Attendance.objects.filter(subject_id=self.subject.id).exists())
+
+    def test_deleting_subject_with_attendance_history_succeeds(self):
+        response = self.client.get(reverse('delete_subject', args=[self.subject.id]))
+        self.assertRedirects(response, reverse('manage_subject'))
+        self.assertFalse(Subject.objects.filter(id=self.subject.id).exists())
+        self.assertFalse(Attendance.objects.filter(subject_id=self.subject.id).exists())
+
+    def test_deleting_course_with_enrolled_student_is_blocked_not_500(self):
+        response = self.client.get(reverse('delete_course', args=[self.course.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Course.objects.filter(id=self.course.id).exists())
+
+    def test_deleting_session_with_attendance_history_is_blocked_not_500(self):
+        response = self.client.get(reverse('delete_session', args=[self.session.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Session.objects.filter(id=self.session.id).exists())

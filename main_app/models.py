@@ -76,15 +76,17 @@ class Course(models.Model):
 
 class Student(models.Model):
     admin = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
-    course = models.ForeignKey(Course, on_delete=models.DO_NOTHING, null=True, blank=False)
-    session = models.ForeignKey(Session, on_delete=models.DO_NOTHING, null=True)
+    # PROTECT: block deleting a course/session while students are still
+    # enrolled in it, rather than silently orphaning or deleting them.
+    course = models.ForeignKey(Course, on_delete=models.PROTECT, null=True, blank=False)
+    session = models.ForeignKey(Session, on_delete=models.PROTECT, null=True)
 
     def __str__(self):
         return self.admin.last_name + ", " + self.admin.first_name
 
 
 class Staff(models.Model):
-    course = models.ForeignKey(Course, on_delete=models.DO_NOTHING, null=True, blank=False)
+    course = models.ForeignKey(Course, on_delete=models.PROTECT, null=True, blank=False)
     admin = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
 
     def __str__(self):
@@ -103,15 +105,20 @@ class Subject(models.Model):
 
 
 class Attendance(models.Model):
-    session = models.ForeignKey(Session, on_delete=models.DO_NOTHING)
-    subject = models.ForeignKey(Subject, on_delete=models.DO_NOTHING)
+    # CASCADE: attendance records are meaningless without their session/
+    # subject, so deleting either should clean up the attendance taken
+    # under it rather than blocking (matches AttendanceReport below).
+    session = models.ForeignKey(Session, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
     date = models.DateField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 
 class AttendanceReport(models.Model):
-    student = models.ForeignKey(Student, on_delete=models.DO_NOTHING)
+    # CASCADE: matches every other student-owned record (leave, feedback,
+    # notifications, results) — deleting a student removes their history.
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
     attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE)
     status = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

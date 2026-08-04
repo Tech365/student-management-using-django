@@ -846,15 +846,23 @@ def send_staff_notification(request):
 
 def delete_staff(request, staff_id):
     staff = get_object_or_404(CustomUser, staff__id=staff_id)
-    staff.delete()
-    messages.success(request, "Staff deleted successfully!")
+    try:
+        staff.delete()
+        messages.success(request, "Staff deleted successfully!")
+    except Exception:
+        logger.exception('Unhandled error in delete_staff')
+        messages.error(request, "Could not delete this staff member.")
     return redirect(reverse('manage_staff'))
 
 
 def delete_student(request, student_id):
     student = get_object_or_404(CustomUser, student__id=student_id)
-    student.delete()
-    messages.success(request, "Student deleted successfully!")
+    try:
+        student.delete()
+        messages.success(request, "Student deleted successfully!")
+    except Exception:
+        logger.exception('Unhandled error in delete_student')
+        messages.error(request, "Could not delete this student.")
     return redirect(reverse('manage_student'))
 
 
@@ -872,8 +880,12 @@ def delete_course(request, course_id):
 
 def delete_subject(request, subject_id):
     subject = get_object_or_404(Subject, id=subject_id)
-    subject.delete()
-    messages.success(request, "Subject deleted successfully!")
+    try:
+        subject.delete()
+        messages.success(request, "Subject deleted successfully!")
+    except Exception:
+        logger.exception('Unhandled error in delete_subject')
+        messages.error(request, "Could not delete this subject.")
     return redirect(reverse('manage_subject'))
 
 
