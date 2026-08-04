@@ -43,6 +43,13 @@
 
                 <li class="nav-header">PEOPLE</li>
                 <li class="nav-item">
+                    {% url 'add_admin' as add_admin %}
+                    <a href="{{add_admin}}" class="nav-link {% if add_admin == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-shield text-primary"></i>
+                        <p>Add Admin</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     {% url 'add_staff' as add_staff %}
                     <a href="{{add_staff}}" class="nav-link {% if add_staff == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-user-plus text-primary"></i>

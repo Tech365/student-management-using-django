@@ -53,6 +53,42 @@ def admin_home(request):
     return render(request, 'hod_template/home_content.html', context)
 
 
+def add_admin(request):
+    form = AdminForm(request.POST or None, request.FILES or None)
+    context = {'form': form, 'page_title': 'Add Admin'}
+    if request.method == 'POST':
+        if form.is_valid():
+            first_name = form.cleaned_data.get('first_name')
+            last_name = form.cleaned_data.get('last_name')
+            address = form.cleaned_data.get('address')
+            email = form.cleaned_data.get('email')
+            gender = form.cleaned_data.get('gender')
+            password = form.cleaned_data.get('password')
+            passport = request.FILES.get('profile_pic')
+            fs = FileSystemStorage()
+            filename = fs.save(passport.name, passport)
+            passport_url = fs.url(filename)
+            try:
+                # create_user (not create_superuser): this grants the app-level
+                # HOD/Admin role (user_type=1) but not is_staff/is_superuser,
+                # so the new account can't log into Django's own /admin/ site.
+                user = CustomUser.objects.create_user(
+                    email=email, password=password, user_type=1, first_name=first_name, last_name=last_name, profile_pic=passport_url)
+                user.gender = gender
+                user.address = address
+                user.save()
+                messages.success(request, "Successfully Added")
+                return redirect(reverse('add_admin'))
+
+            except Exception as e:
+                logger.exception('Unhandled error in add_admin')
+                messages.error(request, "Could Not Add " + str(e))
+        else:
+            messages.error(request, "Please fulfil all requirements")
+
+    return render(request, 'hod_template/add_admin_template.html', context)
+
+
 def add_staff(request):
     form = StaffForm(request.POST or None, request.FILES or None)
     context = {'form': form, 'page_title': 'Add Staff'}

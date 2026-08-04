@@ -1,9 +1,11 @@
 import datetime
+import io
 import json
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.urls import reverse
+from PIL import Image
 
 from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      LeaveReportStaff, LeaveReportStudent, Session, Staff,
@@ -21,6 +23,13 @@ def make_admin(email):
 
 def csv_file(content, name="upload.csv"):
     return SimpleUploadedFile(name, content.encode("utf-8"), content_type="text/csv")
+
+
+def make_image_file(name="avatar.png"):
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), color="white").save(buf, format="PNG")
+    buf.seek(0)
+    return SimpleUploadedFile(name, buf.read(), content_type="image/png")
 
 
 def make_course(name="Computer Science"):
@@ -541,3 +550,40 @@ class ResultsReportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()
         self.assertIn('Results Report Subject', body)
+
+
+class AddAdminTests(TestCase):
+    def setUp(self):
+        make_admin("add_admin_actor@example.com")
+        self.client.login(username="add_admin_actor@example.com", password=PASSWORD)
+
+    def _post(self, email):
+        return self.client.post(reverse('add_admin'), {
+            'first_name': 'New', 'last_name': 'Principal', 'email': email,
+            'gender': 'F', 'address': '1 Test St', 'password': PASSWORD,
+            'profile_pic': make_image_file(),
+        })
+
+    def test_creates_hod_account_without_django_admin_access(self):
+        self._post('new_principal@example.com')
+        user = CustomUser.objects.get(email='new_principal@example.com')
+        self.assertEqual(user.user_type, '1')
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertTrue(user.check_password(PASSWORD))
+
+    def test_new_admin_can_log_in_and_reach_admin_home(self):
+        self._post('new_principal2@example.com')
+        client = Client()
+        ok = client.login(username='new_principal2@example.com', password=PASSWORD)
+        self.assertTrue(ok)
+        response = client.get(reverse('admin_home'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_staff_cannot_reach_add_admin(self):
+        course = make_course("Add Admin Perm Course")
+        make_staff("add_admin_perm_staff@example.com", course)
+        client = Client()
+        client.login(username="add_admin_perm_staff@example.com", password=PASSWORD)
+        response = client.get(reverse('add_admin'))
+        self.assertRedirects(response, reverse('staff_home'))
