@@ -1,0 +1,54 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Privacy Notice | Madrasa Jamaliyah</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'plugins/fontawesome-free/css/all.min.css' %}">
+    <link rel="stylesheet" href="{% static 'dist/css/adminlte.min.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700" rel="stylesheet">
+</head>
+
+<body class="hold-transition">
+    <div class="content-wrapper" style="margin-left: 0;">
+        <div class="container" style="max-width: 800px; padding-top: 40px; padding-bottom: 40px;">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Privacy Notice</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted"><em>This is a general-purpose draft notice, not legal advice. It should be reviewed and customized by Madrasa Jamaliyah before being treated as an official policy.</em></p>
+
+                    <h5>What we collect</h5>
+                    <p>This system stores information needed to run day-to-day attendance and academic administration:</p>
+                    <ul>
+                        <li>Student and staff names, contact details, and addresses</li>
+                        <li>A profile photo, if one is uploaded</li>
+                        <li>Daily attendance records</li>
+                        <li>Test and exam results</li>
+                        <li>Leave requests and feedback submitted through the system</li>
+                    </ul>
+
+                    <h5>Why we collect it</h5>
+                    <p>This information is used solely to administer the Madrasa: recording attendance, tracking academic progress, managing staff and student records, and communicating with students and staff.</p>
+
+                    <h5>Who can see it</h5>
+                    <p>Access is restricted to Madrasa administrators and teaching staff, and is limited to what each role needs: teachers can see records for the students they teach, and students/parents can see only their own records.</p>
+
+                    <h5>How it's stored</h5>
+                    <p>Data is stored in a private database accessible only to authorized administrators, and is transmitted over an encrypted (HTTPS) connection. Automated backups are kept for disaster recovery.</p>
+
+                    <h5>Questions</h5>
+                    <p>If you have questions about the information held about you or your child, please contact the Madrasa administration directly.</p>
+
+                    <p class="mt-4"><a href="{% url 'login_page' %}">&larr; Back to login</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

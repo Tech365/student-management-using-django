@@ -15,15 +15,16 @@ from django.utils.crypto import get_random_string
 
 from .forms import (AdminForm, CourseForm, CSVUploadForm, SessionForm,
                     StaffForm, StudentForm, SubjectForm)
-from .models import (Admin, Attendance, AttendanceReport, Course, CustomUser,
-                     FeedbackStaff, FeedbackStudent, LeaveReportStaff,
-                     LeaveReportStudent, NotificationStaff,
+from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
+                     CustomUser, FeedbackStaff, FeedbackStudent,
+                     LeaveReportStaff, LeaveReportStudent, NotificationStaff,
                      NotificationStudent, Session, Staff, Student,
                      StudentResult, Subject)
-from .utils import csv_response, paginate, read_csv_rows
+from .utils import csv_response, log_action, paginate, read_csv_rows
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
+CHRONIC_ABSENCE_THRESHOLD = 75  # attendance % below this gets flagged in reports
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ def add_admin(request):
                 user.gender = gender
                 user.address = address
                 user.save()
+                log_action(request, 'created', 'Admin', user)
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_admin'))
 
@@ -112,6 +114,7 @@ def add_staff(request):
                 user.address = address
                 user.staff.course = course
                 user.save()
+                log_action(request, 'created', 'Staff', user)
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_staff'))
 
@@ -149,6 +152,7 @@ def add_student(request):
                 user.student.session = session
                 user.student.course = course
                 user.save()
+                log_action(request, 'created', 'Student', user)
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_student'))
             except Exception as e:
@@ -172,6 +176,7 @@ def add_course(request):
                 course = Course()
                 course.name = name
                 course.save()
+                log_action(request, 'created', 'Course', course)
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_course'))
             except:
@@ -199,6 +204,7 @@ def add_subject(request):
                 subject.staff = staff
                 subject.course = course
                 subject.save()
+                log_action(request, 'created', 'Subject', subject)
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_subject'))
 
@@ -395,6 +401,16 @@ def bulk_upload_students(request):
     return render(request, 'hod_template/bulk_upload_students.html', context)
 
 
+def manage_admin(request):
+    admins = paginate(request, CustomUser.objects.filter(user_type=1).select_related('admin').order_by('id'))
+    context = {
+        'admins': admins,
+        'page_obj': admins,
+        'page_title': 'Manage Admins'
+    }
+    return render(request, "hod_template/manage_admin.html", context)
+
+
 def manage_staff(request):
     allStaff = paginate(request, CustomUser.objects.filter(user_type=2).select_related('staff', 'staff__course').order_by('id'))
     context = {
@@ -470,6 +486,7 @@ def edit_staff(request, staff_id):
                 staff.course = course
                 user.save()
                 staff.save()
+                log_action(request, 'updated', 'Staff', user)
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_staff', args=[staff_id]))
             except Exception as e:
@@ -520,6 +537,7 @@ def edit_student(request, student_id):
                 student.course = course
                 user.save()
                 student.save()
+                log_action(request, 'updated', 'Student', user)
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_student', args=[student_id]))
             except Exception as e:
@@ -546,6 +564,7 @@ def edit_course(request, course_id):
                 course = Course.objects.get(id=course_id)
                 course.name = name
                 course.save()
+                log_action(request, 'updated', 'Course', course)
                 messages.success(request, "Successfully Updated")
             except:
                 logger.exception('Unhandled error in edit_course')
@@ -575,6 +594,7 @@ def edit_subject(request, subject_id):
                 subject.staff = staff
                 subject.course = course
                 subject.save()
+                log_action(request, 'updated', 'Subject', subject)
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_subject', args=[subject_id]))
             except Exception as e:
@@ -591,7 +611,8 @@ def add_session(request):
     if request.method == 'POST':
         if form.is_valid():
             try:
-                form.save()
+                session = form.save()
+                log_action(request, 'created', 'Session', session)
                 messages.success(request, "Session Created")
                 return redirect(reverse('add_session'))
             except Exception as e:
@@ -616,7 +637,8 @@ def edit_session(request, session_id):
     if request.method == 'POST':
         if form.is_valid():
             try:
-                form.save()
+                session = form.save()
+                log_action(request, 'updated', 'Session', session)
                 messages.success(request, "Session Updated")
                 return redirect(reverse('edit_session', args=[session_id]))
             except Exception as e:
@@ -882,10 +904,45 @@ def send_staff_notification(request):
         return HttpResponse("False")
 
 
+def toggle_staff_status(request, staff_id):
+    staff_user = get_object_or_404(CustomUser, staff__id=staff_id)
+    staff_user.is_active = not staff_user.is_active
+    staff_user.save()
+    log_action(request, 'activated' if staff_user.is_active else 'deactivated', 'Staff', staff_user)
+    messages.success(
+        request, f"Staff {'activated' if staff_user.is_active else 'deactivated'} successfully!")
+    return redirect(reverse('manage_staff'))
+
+
+def toggle_student_status(request, student_id):
+    student_user = get_object_or_404(CustomUser, student__id=student_id)
+    student_user.is_active = not student_user.is_active
+    student_user.save()
+    log_action(request, 'activated' if student_user.is_active else 'deactivated', 'Student', student_user)
+    messages.success(
+        request, f"Student {'activated' if student_user.is_active else 'deactivated'} successfully!")
+    return redirect(reverse('manage_student'))
+
+
+def toggle_admin_status(request, admin_id):
+    admin_user = get_object_or_404(CustomUser, admin__id=admin_id)
+    if admin_user.id == request.user.id:
+        messages.error(request, "You cannot deactivate your own account.")
+        return redirect(reverse('manage_admin'))
+    admin_user.is_active = not admin_user.is_active
+    admin_user.save()
+    log_action(request, 'activated' if admin_user.is_active else 'deactivated', 'Admin', admin_user)
+    messages.success(
+        request, f"Admin {'activated' if admin_user.is_active else 'deactivated'} successfully!")
+    return redirect(reverse('manage_admin'))
+
+
 def delete_staff(request, staff_id):
     staff = get_object_or_404(CustomUser, staff__id=staff_id)
     try:
+        staff_repr = str(staff)
         staff.delete()
+        log_action(request, 'deleted', 'Staff', staff_repr)
         messages.success(request, "Staff deleted successfully!")
     except Exception:
         logger.exception('Unhandled error in delete_staff')
@@ -896,7 +953,9 @@ def delete_staff(request, staff_id):
 def delete_student(request, student_id):
     student = get_object_or_404(CustomUser, student__id=student_id)
     try:
+        student_repr = str(student)
         student.delete()
+        log_action(request, 'deleted', 'Student', student_repr)
         messages.success(request, "Student deleted successfully!")
     except Exception:
         logger.exception('Unhandled error in delete_student')
@@ -907,7 +966,9 @@ def delete_student(request, student_id):
 def delete_course(request, course_id):
     course = get_object_or_404(Course, id=course_id)
     try:
+        course_repr = str(course)
         course.delete()
+        log_action(request, 'deleted', 'Course', course_repr)
         messages.success(request, "Course deleted successfully!")
     except Exception:
         logger.exception('Unhandled error in delete_course')
@@ -919,7 +980,9 @@ def delete_course(request, course_id):
 def delete_subject(request, subject_id):
     subject = get_object_or_404(Subject, id=subject_id)
     try:
+        subject_repr = str(subject)
         subject.delete()
+        log_action(request, 'deleted', 'Subject', subject_repr)
         messages.success(request, "Subject deleted successfully!")
     except Exception:
         logger.exception('Unhandled error in delete_subject')
@@ -930,7 +993,9 @@ def delete_subject(request, subject_id):
 def delete_session(request, session_id):
     session = get_object_or_404(Session, id=session_id)
     try:
+        session_repr = str(session)
         session.delete()
+        log_action(request, 'deleted', 'Session', session_repr)
         messages.success(request, "Session deleted successfully!")
     except Exception:
         logger.exception('Unhandled error in delete_session')
@@ -980,6 +1045,25 @@ def _attendance_summary_data(request):
         .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
         .order_by('date')
     )
+    by_student_raw = (
+        reports.values('student_id', 'student__admin__first_name', 'student__admin__last_name')
+        .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
+    )
+    student_summary = []
+    for row in by_student_raw:
+        total = row['total']
+        present = row['present']
+        percent = round(present / total * 100, 1) if total else 0
+        student_summary.append({
+            'name': f"{row['student__admin__last_name']}, {row['student__admin__first_name']}",
+            'total': total,
+            'present': present,
+            'absent': total - present,
+            'percent': percent,
+            'flagged': percent < CHRONIC_ABSENCE_THRESHOLD,
+        })
+    # Worst attendance first, so chronic absences surface immediately.
+    student_summary.sort(key=lambda r: r['percent'])
 
     return {
         'course_id': course_id,
@@ -988,6 +1072,7 @@ def _attendance_summary_data(request):
         'end_date': end_date,
         'course_summary': with_percent(by_course, 'course'),
         'daily_summary': with_percent(by_day, 'date'),
+        'student_summary': student_summary,
     }
 
 
@@ -1003,6 +1088,8 @@ def report_attendance_summary(request):
         'end_date': data['end_date'],
         'course_summary': data['course_summary'],
         'daily_summary': data['daily_summary'],
+        'student_summary': data['student_summary'],
+        'chronic_threshold': CHRONIC_ABSENCE_THRESHOLD,
     }
     return render(request, 'hod_template/report_attendance_summary.html', context)
 
@@ -1013,6 +1100,14 @@ def report_attendance_summary_csv(request):
             for row in data['course_summary']]
     filename = f"attendance_summary_{data['start_date']}_to_{data['end_date']}.csv"
     return csv_response(filename, ['Course', 'Total', 'Present', 'Absent', 'Attendance %'], rows)
+
+
+def report_attendance_by_student_csv(request):
+    data = _attendance_summary_data(request)
+    rows = [(row['name'], row['total'], row['present'], row['absent'], f"{row['percent']}%",
+             'Yes' if row['flagged'] else '') for row in data['student_summary']]
+    filename = f"attendance_by_student_{data['start_date']}_to_{data['end_date']}.csv"
+    return csv_response(filename, ['Student', 'Total', 'Present', 'Absent', 'Attendance %', 'Below Threshold'], rows)
 
 
 def report_student_attendance(request):
@@ -1176,3 +1271,20 @@ def report_results_csv(request):
     rows = [(r.subject.course.name, r.subject.name, str(r.student), r.test, r.exam)
             for r in data['results']]
     return csv_response('results_report.csv', ['Course', 'Subject', 'Student', 'Test', 'Exam'], rows)
+
+
+def report_activity_log(request):
+    logs = paginate(request, AuditLog.objects.select_related('actor'))
+    context = {
+        'page_title': 'Activity Log',
+        'logs': logs,
+        'page_obj': logs,
+    }
+    return render(request, 'hod_template/report_activity_log.html', context)
+
+
+def report_activity_log_csv(request):
+    logs = AuditLog.objects.select_related('actor')
+    rows = [(log.created_at.strftime('%Y-%m-%d %H:%M'), str(log.actor) if log.actor else 'Unknown',
+              log.action, log.target_model, log.target_repr) for log in logs]
+    return csv_response('activity_log.csv', ['Timestamp', 'Actor', 'Action', 'Target Type', 'Target'], rows)

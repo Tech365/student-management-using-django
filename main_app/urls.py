@@ -21,6 +21,7 @@ from . import hod_views, staff_views, student_views, views
 
 urlpatterns = [
     path("", views.login_page, name='login_page'),
+    path("privacy/", views.privacy_notice, name='privacy_notice'),
     path("get_attendance", views.get_attendance, name='get_attendance'),
     path("firebase-messaging-sw.js", views.showFirebaseJS, name='showFirebaseJS'),
     path("doLogin/", views.doLogin, name='user_login'),
@@ -62,11 +63,16 @@ urlpatterns = [
     path("student/bulk_upload/", hod_views.bulk_upload_students, name='bulk_upload_students'),
     path("subject/add/", hod_views.add_subject, name='add_subject'),
     path("subject/bulk_upload/", hod_views.bulk_upload_subjects, name='bulk_upload_subjects'),
+    path("admin/manage/", hod_views.manage_admin, name='manage_admin'),
+    path("admin/toggle-status/<int:admin_id>",
+         hod_views.toggle_admin_status, name='toggle_admin_status'),
     path("staff/manage/", hod_views.manage_staff, name='manage_staff'),
     path("student/manage/", hod_views.manage_student, name='manage_student'),
     path("course/manage/", hod_views.manage_course, name='manage_course'),
     path("subject/manage/", hod_views.manage_subject, name='manage_subject'),
     path("staff/edit/<int:staff_id>", hod_views.edit_staff, name='edit_staff'),
+    path("staff/toggle-status/<int:staff_id>",
+         hod_views.toggle_staff_status, name='toggle_staff_status'),
     path("staff/delete/<int:staff_id>",
          hod_views.delete_staff, name='delete_staff'),
 
@@ -81,6 +87,8 @@ urlpatterns = [
 
     path("student/delete/<int:student_id>",
          hod_views.delete_student, name='delete_student'),
+    path("student/toggle-status/<int:student_id>",
+         hod_views.toggle_student_status, name='toggle_student_status'),
     path("student/edit/<int:student_id>",
          hod_views.edit_student, name='edit_student'),
     path("course/edit/<int:course_id>",
@@ -140,6 +148,8 @@ urlpatterns = [
          name='report_attendance_summary'),
     path("reports/attendance/csv/", hod_views.report_attendance_summary_csv,
          name='report_attendance_summary_csv'),
+    path("reports/attendance/by-student/csv/", hod_views.report_attendance_by_student_csv,
+         name='report_attendance_by_student_csv'),
     path("reports/student-attendance/", hod_views.report_student_attendance,
          name='report_student_attendance'),
     path("reports/student-attendance/csv/", hod_views.report_student_attendance_csv,
@@ -148,5 +158,7 @@ urlpatterns = [
     path("reports/leave/csv/", hod_views.report_leave_csv, name='report_leave_csv'),
     path("reports/results/", hod_views.report_results, name='report_results'),
     path("reports/results/csv/", hod_views.report_results_csv, name='report_results_csv'),
+    path("reports/activity-log/", hod_views.report_activity_log, name='report_activity_log'),
+    path("reports/activity-log/csv/", hod_views.report_activity_log_csv, name='report_activity_log_csv'),
 
 ]

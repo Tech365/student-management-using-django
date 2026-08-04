@@ -49,6 +49,13 @@
                 </div>
 
                 <div class="card">
+                    <div class="card-header"><h3 class="card-title">Attendance Trend</h3></div>
+                    <div class="card-body">
+                        <canvas id="attendanceTrendChart" style="min-height: 250px; height: 250px;"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
                     <div class="card-header"><h3 class="card-title">By Course</h3></div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -99,8 +106,80 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">By Student &mdash; worst attendance first</h3>
+                        <div class="card-tools">
+                            <a class="btn btn-outline-secondary btn-sm"
+                               href="{% url 'report_attendance_by_student_csv' %}?course={{ selected_course }}&session={{ selected_session }}&start_date={{ start_date }}&end_date={{ end_date }}">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">Students below {{ chronic_threshold }}% attendance are flagged.</p>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Student</th><th>Total</th><th>Present</th><th>Absent</th><th>Attendance %</th><th></th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in student_summary %}
+                                    <tr class="{% if row.flagged %}table-danger{% endif %}">
+                                        <td>{{ row.name }}</td>
+                                        <td>{{ row.total }}</td>
+                                        <td>{{ row.present }}</td>
+                                        <td>{{ row.absent }}</td>
+                                        <td>{{ row.percent }}%</td>
+                                        <td>
+                                            {% if row.flagged %}
+                                            <span class="badge badge-danger">Below {{ chronic_threshold }}%</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="6" class="text-muted">No attendance recorded for this range.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </section>
 {% endblock content %}
+{% block custom_js %}
+<script>
+    (function () {
+        var days = [
+            {% for row in daily_summary %}
+            {date: "{{ row.date }}", percent: {{ row.percent }}},
+            {% endfor %}
+        ];
+        var ctx = document.getElementById('attendanceTrendChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: days.map(function (d) { return d.date; }),
+                datasets: [{
+                    label: 'Attendance %',
+                    data: days.map(function (d) { return d.percent; }),
+                    borderColor: '#17a2b8',
+                    backgroundColor: 'rgba(23,162,184,0.15)',
+                    fill: true,
+                    tension: 0.2,
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: {
+                    yAxes: [{ ticks: { beginAtZero: true, max: 100 } }]
+                }
+            }
+        });
+    })();
+</script>
+{% endblock custom_js %}

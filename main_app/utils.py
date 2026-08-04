@@ -39,3 +39,16 @@ def csv_response(filename, header, rows):
     writer.writerow(header)
     writer.writerows(rows)
     return response
+
+
+def log_action(request, action, target_model, target):
+    """Record an admin mutation (create/update/delete/activate/deactivate)
+    to the AuditLog. Imported lazily to avoid a circular import with
+    models.py at module load time."""
+    from .models import AuditLog
+    AuditLog.objects.create(
+        actor=request.user if request.user.is_authenticated else None,
+        action=action,
+        target_model=target_model,
+        target_repr=str(target)[:255],
+    )

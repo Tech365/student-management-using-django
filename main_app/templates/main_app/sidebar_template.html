@@ -50,6 +50,13 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    {% url 'manage_admin' as manage_admin %}
+                    <a href="{{manage_admin}}" class="nav-link {% if manage_admin == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-shield text-primary"></i>
+                        <p>Manage Admins</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     {% url 'add_staff' as add_staff %}
                     <a href="{{add_staff}}" class="nav-link {% if add_staff == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-user-plus text-primary"></i>
@@ -214,6 +221,13 @@
                     <a href="{{report_results}}" class="nav-link {% if report_results == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-chart-pie text-teal"></i>
                         <p>Results Report</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'report_activity_log' as report_activity_log %}
+                    <a href="{{report_activity_log}}" class="nav-link {% if report_activity_log == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-history text-teal"></i>
+                        <p>Activity Log</p>
                     </a>
                 </li>
 

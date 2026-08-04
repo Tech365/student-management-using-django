@@ -1,0 +1,62 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                        <div class="card-tools">
+                            <a class="btn btn-outline-light btn-sm" href="{% url 'report_activity_log_csv' %}">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">Who created, updated, deleted, or (de)activated admin/staff/student/course/subject/session records.</p>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Type</th><th>Target</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for log in logs %}
+                                    <tr>
+                                        <td>{{ log.created_at|date:"Y-m-d H:i" }}</td>
+                                        <td>{% if log.actor %}{{ log.actor }}{% else %}<span class="text-muted">Unknown</span>{% endif %}</td>
+                                        <td>
+                                            {% if log.action == 'created' %}
+                                            <span class="badge badge-success">Created</span>
+                                            {% elif log.action == 'updated' %}
+                                            <span class="badge badge-info">Updated</span>
+                                            {% elif log.action == 'deleted' %}
+                                            <span class="badge badge-danger">Deleted</span>
+                                            {% elif log.action == 'activated' %}
+                                            <span class="badge badge-success">Activated</span>
+                                            {% elif log.action == 'deactivated' %}
+                                            <span class="badge badge-warning">Deactivated</span>
+                                            {% else %}
+                                            <span class="badge badge-secondary">{{ log.action }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ log.target_model }}</td>
+                                        <td>{{ log.target_repr }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="5" class="text-muted">No activity recorded yet.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% include "includes/pagination.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

@@ -24,6 +24,10 @@ def login_page(request):
     return render(request, 'main_app/login.html')
 
 
+def privacy_notice(request):
+    return render(request, 'main_app/privacy_notice.html')
+
+
 def doLogin(request, **kwargs):
     if request.method != 'POST':
         return HttpResponse("<h4>Denied</h4>")

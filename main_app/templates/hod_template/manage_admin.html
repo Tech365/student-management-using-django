@@ -12,8 +12,8 @@
                     <div class="card-header">
                         <h3 class="card-title">{{page_title}}</h3>
                         <div class="card-tools">
-                            <a href="{% url 'bulk_upload_staff' %}" class="btn btn-outline-secondary btn-sm">
-                                <i class="fas fa-file-upload"></i> Bulk Upload
+                            <a href="{% url 'add_admin' %}" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-user-plus"></i> Add Admin
                             </a>
                         </div>
                     </div>
@@ -26,42 +26,45 @@
                                     <th>Full Name</th>
                                     <th>Email</th>
                                     <th>Gender</th>
-                                    <th>Course</th>
                                     <th>Status</th>
                                     <th>Avatar</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for staff in allStaff %}
+                                {% for admin in admins %}
                                 <tr>
                                     <td>{{ forloop.counter }}</td>
-                                    <td>{{staff.last_name}}, {{staff.first_name}}</td>
-                                    <td>{{staff.email}}</td>
-                                    <td>{{staff.gender}}</td>
-                                    <td>{{staff.staff.course.name}}</td>
+                                    <td>{{admin.last_name}}, {{admin.first_name}}</td>
+                                    <td>{{admin.email}}</td>
+                                    <td>{{admin.gender}}</td>
                                     <td>
-                                        {% if staff.is_active %}
+                                        {% if admin.is_active %}
                                         <span class="badge badge-success">Active</span>
                                         {% else %}
                                         <span class="badge badge-secondary">Inactive</span>
                                         {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if staff.profile_pic == ""  %}
-                                        No Image
-                                        {% else %}
-                                        <img class="img img-fluid mb-2" height="100" width="100"
-                                            src="{{staff.profile_pic}}" alt="">
+                                        {% if admin.id == request.user.id %}
+                                        <span class="badge badge-info">You</span>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <a href="{% url 'edit_staff' staff.staff.id %}" class="btn btn-primary">Edit</a> -
-                                        <a href="{% url 'toggle_staff_status' staff.staff.id %}" class="btn {% if staff.is_active %}btn-warning{% else %}btn-success{% endif %}"
-                                           onclick="return confirm('{% if staff.is_active %}Deactivate this staff member? They will no longer be able to log in.{% else %}Reactivate this staff member?{% endif %}')">
-                                            {% if staff.is_active %}Deactivate{% else %}Activate{% endif %}
-                                        </a> -
-                                        <a href="{% url 'delete_staff' staff.staff.id %}" class="btn btn-danger" onclick="return confirm('This permanently deletes the staff member and cannot be undone. Consider Deactivate instead. Continue?')">Delete</a>
+                                        {% if admin.profile_pic == ""  %}
+                                        No Image
+                                        {% else %}
+                                        <img class="img img-fluid mb-2" height="100" width="100"
+                                            src="{{admin.profile_pic}}" alt="">
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if admin.id != request.user.id %}
+                                        <a href="{% url 'toggle_admin_status' admin.admin.id %}" class="btn {% if admin.is_active %}btn-warning{% else %}btn-success{% endif %}"
+                                           onclick="return confirm('{% if admin.is_active %}Deactivate this admin? They will no longer be able to log in.{% else %}Reactivate this admin?{% endif %}')">
+                                            {% if admin.is_active %}Deactivate{% else %}Activate{% endif %}
+                                        </a>
+                                        {% else %}
+                                        <span class="text-muted">&mdash;</span>
+                                        {% endif %}
                                     </td>
                                 </tr>
                                 {% endfor %}

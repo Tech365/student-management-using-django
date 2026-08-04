@@ -20,7 +20,7 @@ class LoginCheckMiddleWare(MiddlewareMixin):
             else: # None of the aforementioned ? Please take the user to login page
                 return redirect(reverse('login_page'))
         else:
-            if request.path == reverse('login_page') or modulename == 'django.contrib.auth.views' or request.path == reverse('user_login') or request.path == reverse('showFirebaseJS'): # If the path is login, auth, or the service worker (needed pre-login for PWA install), pass
+            if request.path == reverse('login_page') or modulename == 'django.contrib.auth.views' or request.path == reverse('user_login') or request.path == reverse('showFirebaseJS') or request.path == reverse('privacy_notice'): # If the path is login, auth, the service worker (needed pre-login for PWA install), or the privacy notice, pass
                 pass
             else:
                 return redirect(reverse('login_page'))

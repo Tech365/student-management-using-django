@@ -182,6 +182,22 @@ class StudentResult(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class AuditLog(models.Model):
+    # SET_NULL rather than CASCADE: deleting the actor's account shouldn't
+    # erase the historical record that the action happened.
+    actor = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, related_name='audit_actions')
+    action = models.CharField(max_length=50)
+    target_model = models.CharField(max_length=100)
+    target_repr = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.actor} {self.action} {self.target_model} {self.target_repr}"
+
+
 @receiver(post_save, sender=CustomUser)
 def create_user_profile(sender, instance, created, **kwargs):
     if created:

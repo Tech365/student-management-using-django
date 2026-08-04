@@ -27,8 +27,9 @@
                                     <th>Email</th>
                                     <th>Gender</th>
                                     <th>Course</th>
+                                    <th>Status</th>
                                     <th>Avatar</th>
-                                    <th>Edit</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -40,6 +41,13 @@
                                     <td>{{student.gender}}</td>
                                     <td>{{student.student.course.name}}</td>
                                     <td>
+                                        {% if student.is_active %}
+                                        <span class="badge badge-success">Active</span>
+                                        {% else %}
+                                        <span class="badge badge-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
                                         {% if student.profile_pic == ""  %}
                                         No Image
                                         {% else %}
@@ -47,9 +55,13 @@
                                             src="{{student.profile_pic}}" alt="">
                                         {% endif %}
                                     </td>
-                                    
+
                                     <td><a href="{% url 'edit_student' student.student.id %}" class="btn btn-primary">Edit</a> -
-                                        <a href="{% url 'delete_student' student.student.id %}" class="btn btn-danger" onclick="return confirm('Are you sure about this ?')">Delete</a>
+                                        <a href="{% url 'toggle_student_status' student.student.id %}" class="btn {% if student.is_active %}btn-warning{% else %}btn-success{% endif %}"
+                                           onclick="return confirm('{% if student.is_active %}Deactivate this student? They will no longer be able to log in.{% else %}Reactivate this student?{% endif %}')">
+                                            {% if student.is_active %}Deactivate{% else %}Activate{% endif %}
+                                        </a> -
+                                        <a href="{% url 'delete_student' student.student.id %}" class="btn btn-danger" onclick="return confirm('This permanently deletes the student and cannot be undone. Consider Deactivate instead. Continue?')">Delete</a>
 
                                     </td>
                                 </tr>

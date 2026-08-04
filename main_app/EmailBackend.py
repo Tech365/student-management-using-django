@@ -10,6 +10,8 @@ class EmailBackend(ModelBackend):
         except UserModel.DoesNotExist:
             return None
         else:
-            if user.check_password(password):
+            # user_can_authenticate() checks is_active — without this,
+            # a deactivated account could still log in.
+            if user.check_password(password) and self.user_can_authenticate(user):
                 return user
         return None

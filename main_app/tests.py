@@ -2,14 +2,15 @@ import datetime
 import io
 import json
 
+from django.contrib.auth import authenticate
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.urls import reverse
 from PIL import Image
 
-from .models import (Attendance, AttendanceReport, Course, CustomUser,
-                     LeaveReportStaff, LeaveReportStudent, Session, Staff,
-                     Student, StudentResult, Subject)
+from .models import (Attendance, AttendanceReport, AuditLog, Course,
+                     CustomUser, LeaveReportStaff, LeaveReportStudent,
+                     Session, Staff, Student, StudentResult, Subject)
 
 PASSWORD = "pass1234"
 
@@ -587,3 +588,141 @@ class AddAdminTests(TestCase):
         client.login(username="add_admin_perm_staff@example.com", password=PASSWORD)
         response = client.get(reverse('add_admin'))
         self.assertRedirects(response, reverse('staff_home'))
+
+
+class DeactivateAccountTests(TestCase):
+    def setUp(self):
+        self.admin = make_admin("deactivate_admin@example.com")
+        self.client.login(username="deactivate_admin@example.com", password=PASSWORD)
+        self.course = make_course("Deactivate Course")
+        self.session = make_session()
+
+    def test_deactivated_staff_cannot_authenticate(self):
+        staff = make_staff("deactivate_staff@example.com", self.course)
+        self.assertIsNotNone(authenticate(username="deactivate_staff@example.com", password=PASSWORD))
+        self.client.get(reverse('toggle_staff_status', args=[staff.id]))
+        staff.admin.refresh_from_db()
+        self.assertFalse(staff.admin.is_active)
+        self.assertIsNone(authenticate(username="deactivate_staff@example.com", password=PASSWORD))
+
+    def test_reactivating_staff_restores_login(self):
+        staff = make_staff("reactivate_staff@example.com", self.course)
+        self.client.get(reverse('toggle_staff_status', args=[staff.id]))  # deactivate
+        self.client.get(reverse('toggle_staff_status', args=[staff.id]))  # reactivate
+        staff.admin.refresh_from_db()
+        self.assertTrue(staff.admin.is_active)
+        self.assertIsNotNone(authenticate(username="reactivate_staff@example.com", password=PASSWORD))
+
+    def test_deactivated_student_cannot_authenticate(self):
+        student = make_student("deactivate_student@example.com", self.course, self.session)
+        self.client.get(reverse('toggle_student_status', args=[student.id]))
+        self.assertIsNone(authenticate(username="deactivate_student@example.com", password=PASSWORD))
+
+    def test_admin_cannot_deactivate_self(self):
+        response = self.client.get(reverse('toggle_admin_status', args=[self.admin.admin.id]))
+        self.assertRedirects(response, reverse('manage_admin'))
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+    def test_admin_can_deactivate_another_admin(self):
+        other_admin = make_admin("other_admin@example.com")
+        response = self.client.get(reverse('toggle_admin_status', args=[other_admin.admin.id]))
+        self.assertRedirects(response, reverse('manage_admin'))
+        other_admin.refresh_from_db()
+        self.assertFalse(other_admin.is_active)
+        self.assertIsNone(authenticate(username="other_admin@example.com", password=PASSWORD))
+
+
+class ManageAdminPageTests(TestCase):
+    def test_lists_all_admins(self):
+        make_admin("manage_admin_viewer@example.com")
+        self.client.login(username="manage_admin_viewer@example.com", password=PASSWORD)
+        response = self.client.get(reverse('manage_admin'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("manage_admin_viewer@example.com", response.content.decode())
+
+
+class AuditLogTests(TestCase):
+    def setUp(self):
+        make_admin("audit_admin@example.com")
+        self.client.login(username="audit_admin@example.com", password=PASSWORD)
+
+    def test_creating_course_is_logged(self):
+        self.client.post(reverse('add_course'), {'name': 'Audited Course'})
+        log = AuditLog.objects.filter(action='created', target_model='Course').latest('created_at')
+        self.assertIn('Audited Course', log.target_repr)
+        self.assertEqual(log.actor.email, "audit_admin@example.com")
+
+    def test_deleting_course_is_logged(self):
+        course = make_course("To Be Deleted")
+        self.client.get(reverse('delete_course', args=[course.id]))
+        self.assertTrue(AuditLog.objects.filter(action='deleted', target_model='Course', target_repr='To Be Deleted').exists())
+
+    def test_toggling_staff_status_is_logged(self):
+        course = make_course("Audit Toggle Course")
+        staff = make_staff("audit_toggle_staff@example.com", course)
+        self.client.get(reverse('toggle_staff_status', args=[staff.id]))
+        self.assertTrue(AuditLog.objects.filter(action='deactivated', target_model='Staff').exists())
+
+    def test_activity_log_page_shows_entries(self):
+        self.client.post(reverse('add_course'), {'name': 'Visible In Log'})
+        response = self.client.get(reverse('report_activity_log'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Visible In Log', response.content.decode())
+
+    def test_activity_log_csv_export(self):
+        self.client.post(reverse('add_course'), {'name': 'CSV Logged Course'})
+        response = self.client.get(reverse('report_activity_log_csv'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('CSV Logged Course', response.content.decode())
+
+
+class ChronicAbsenceFlaggingTests(TestCase):
+    def setUp(self):
+        make_admin("chronic_admin@example.com")
+        self.client.login(username="chronic_admin@example.com", password=PASSWORD)
+        self.course = make_course("Chronic Course")
+        self.session = make_session()
+        staff = make_staff("chronic_teacher@example.com", self.course)
+        self.subject = Subject.objects.create(name="Chronic Subject", staff=staff, course=self.course)
+
+        self.good_student = make_student("good_attendance@example.com", self.course, self.session)
+        self.bad_student = make_student("bad_attendance@example.com", self.course, self.session)
+
+        # Good student: 4 present, 0 absent = 100%
+        for day in range(4):
+            attendance = Attendance.objects.create(
+                session=self.session, subject=self.subject, date=datetime.date(2024, 6, 1 + day))
+            AttendanceReport.objects.create(student=self.good_student, attendance=attendance, status=True)
+
+        # Bad student: 1 present, 3 absent = 25%
+        for day in range(4):
+            attendance = Attendance.objects.get_or_create(
+                session=self.session, subject=self.subject, date=datetime.date(2024, 6, 1 + day))[0]
+            AttendanceReport.objects.create(student=self.bad_student, attendance=attendance, status=(day == 0))
+
+    def test_low_attendance_student_is_flagged(self):
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        by_name = {row['name']: row for row in response.context['student_summary']}
+        bad_row = by_name[str(self.bad_student)]
+        good_row = by_name[str(self.good_student)]
+        self.assertTrue(bad_row['flagged'])
+        self.assertEqual(bad_row['percent'], 25.0)
+        self.assertFalse(good_row['flagged'])
+        self.assertEqual(good_row['percent'], 100.0)
+
+    def test_worst_attendance_sorted_first(self):
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        names_in_order = [row['name'] for row in response.context['student_summary']]
+        self.assertEqual(names_in_order[0], str(self.bad_student))
+
+
+class PrivacyNoticeTests(TestCase):
+    def test_accessible_without_login(self):
+        response = self.client.get(reverse('privacy_notice'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Privacy Notice', response.content)
