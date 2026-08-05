@@ -309,7 +309,12 @@
                     {% url 'staff_view_notification' as staff_view_notification %}
                     <a href="{{staff_view_notification}}" class="nav-link {% if staff_view_notification == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-bell text-danger"></i>
-                        <p>View Notifications</p>
+                        <p>
+                            View Notifications
+                            {% if unread_notification_count %}
+                            <span class="right badge badge-danger">{{ unread_notification_count }}</span>
+                            {% endif %}
+                        </p>
                     </a>
                 </li>
                 <li class="nav-item">
@@ -389,7 +394,12 @@
                     {% url 'student_view_notification' as student_view_notification %}
                     <a href="{{student_view_notification}}" class="nav-link {% if student_view_notification == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-bell text-danger"></i>
-                        <p>View Notifications</p>
+                        <p>
+                            View Notifications
+                            {% if unread_notification_count %}
+                            <span class="right badge badge-danger">{{ unread_notification_count }}</span>
+                            {% endif %}
+                        </p>
                     </a>
                 </li>
                 <li class="nav-item">

@@ -260,11 +260,12 @@ def staff_fcmtoken(request):
 
 def staff_view_notification(request):
     staff = get_object_or_404(Staff, admin=request.user)
-    notifications = NotificationStaff.objects.filter(staff=staff)
+    notifications = list(NotificationStaff.objects.filter(staff=staff))
     context = {
         'notifications': notifications,
         'page_title': "View Notifications"
     }
+    NotificationStaff.objects.filter(staff=staff, is_read=False).update(is_read=True)
     return render(request, "staff_template/staff_view_notification.html", context)
 
 
