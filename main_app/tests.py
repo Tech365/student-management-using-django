@@ -523,6 +523,47 @@ class LeaveReportTests(TestCase):
         self.assertIn('Family event', body)
 
 
+class StaffStudentLeaveApprovalTests(TestCase):
+    """A student's leave should be approved by their class teacher (the
+    Staff whose course matches the student's course), not only by the
+    HOD. Also guards against a teacher approving another class's leave
+    by guessing a LeaveReportStudent id."""
+
+    def setUp(self):
+        self.session = make_session()
+        self.course_a = make_course("Leave Approval Course A")
+        self.course_b = make_course("Leave Approval Course B")
+        self.teacher = make_staff("leave_teacher@example.com", self.course_a)
+        self.student_a = make_student("leave_student_a@example.com", self.course_a, self.session)
+        self.student_b = make_student("leave_student_b@example.com", self.course_b, self.session)
+        self.leave_a = LeaveReportStudent.objects.create(
+            student=self.student_a, date="2024-06-10", message="Sick", status=0)
+        self.leave_b = LeaveReportStudent.objects.create(
+            student=self.student_b, date="2024-06-11", message="Family event", status=0)
+        self.client.login(username="leave_teacher@example.com", password=PASSWORD)
+
+    def test_teacher_sees_only_their_class(self):
+        response = self.client.get(reverse('staff_view_student_leave'))
+        leaves = list(response.context['allLeave'])
+        self.assertEqual(leaves, [self.leave_a])
+
+    def test_teacher_can_approve_own_class_leave(self):
+        response = self.client.post(reverse('staff_view_student_leave'), {
+            'id': self.leave_a.id, 'status': '1',
+        })
+        self.assertEqual(response.content.decode(), 'True')
+        self.leave_a.refresh_from_db()
+        self.assertEqual(self.leave_a.status, 1)
+
+    def test_teacher_cannot_approve_other_class_leave(self):
+        response = self.client.post(reverse('staff_view_student_leave'), {
+            'id': self.leave_b.id, 'status': '1',
+        })
+        self.assertEqual(response.content.decode(), 'False')
+        self.leave_b.refresh_from_db()
+        self.assertEqual(self.leave_b.status, 0)
+
+
 class ResultsReportTests(TestCase):
     def setUp(self):
         make_admin("report_admin_results@example.com")

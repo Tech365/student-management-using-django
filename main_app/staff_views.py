@@ -10,8 +10,9 @@ from django.urls import reverse
 
 from .forms import FeedbackStaffForm, LeaveReportStaffForm, StaffEditForm
 from .models import (Attendance, AttendanceReport, CustomUser, FeedbackStaff,
-                     LeaveReportStaff, NotificationStaff, Session, Staff,
-                     Student, StudentResult, Subject)
+                     LeaveReportStaff, LeaveReportStudent, NotificationStaff,
+                     Session, Staff, Student, StudentResult, Subject)
+from .utils import paginate
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,35 @@ def staff_apply_leave(request):
         else:
             messages.error(request, "Form has errors!")
     return render(request, "staff_template/staff_apply_leave.html", context)
+
+
+def staff_view_student_leave(request):
+    staff = get_object_or_404(Staff, admin=request.user)
+    if request.method != 'POST':
+        allLeave = paginate(
+            request,
+            LeaveReportStudent.objects.filter(student__course=staff.course).order_by('-id')
+        )
+        context = {
+            'allLeave': allLeave,
+            'page_obj': allLeave,
+            'page_title': 'Student Leave Requests'
+        }
+        return render(request, "staff_template/student_leave_view.html", context)
+    else:
+        id = request.POST.get('id')
+        status = request.POST.get('status')
+        status = 1 if status == '1' else -1
+        try:
+            # Restrict to leave requests from the staff member's own class,
+            # so a teacher can't approve/reject another class's leave by id.
+            leave = get_object_or_404(LeaveReportStudent, id=id, student__course=staff.course)
+            leave.status = status
+            leave.save()
+            return HttpResponse(True)
+        except Exception:
+            logger.exception("Failed to update student leave status")
+            return HttpResponse(False)
 
 
 def staff_feedback(request):

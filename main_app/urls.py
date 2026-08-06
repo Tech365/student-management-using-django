@@ -101,6 +101,8 @@ urlpatterns = [
     path("staff/home/", staff_views.staff_home, name='staff_home'),
     path("staff/apply/leave/", staff_views.staff_apply_leave,
          name='staff_apply_leave'),
+    path("staff/student/leave/", staff_views.staff_view_student_leave,
+         name='staff_view_student_leave'),
     path("staff/feedback/", staff_views.staff_feedback, name='staff_feedback'),
     path("staff/view/profile/", staff_views.staff_view_profile,
          name='staff_view_profile'),
