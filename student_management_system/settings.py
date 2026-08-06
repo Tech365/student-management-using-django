@@ -186,10 +186,10 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 
-EMAIL_HOST_USER = os.environ.get('EMAIL_ADDRESS') 
+EMAIL_HOST_USER = os.environ.get('EMAIL_ADDRESS')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASSWORD')
 EMAIL_USE_TLS = True
-# DEFAULT_FROM_EMAIL = "Student Management System <admin@admin.com>"
+DEFAULT_FROM_EMAIL = "Madrasa Jamaliyah <%s>" % EMAIL_HOST_USER if EMAIL_HOST_USER else "webmaster@localhost"
 
 # The manifest storage requires `collectstatic` to have run (it looks up
 # cache-busted filenames in a manifest). That's fine in production but is

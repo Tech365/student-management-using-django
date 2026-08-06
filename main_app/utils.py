@@ -1,10 +1,14 @@
 import csv
 import io
+import logging
 
+from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.http import HttpResponse
 
 PAGE_SIZE = 25
+
+logger = logging.getLogger(__name__)
 
 
 def paginate(request, queryset, per_page=PAGE_SIZE):
@@ -39,6 +43,24 @@ def csv_response(filename, header, rows):
     writer.writerow(header)
     writer.writerows(rows)
     return response
+
+
+def send_notification_email(user, message):
+    """Email a notification to a CustomUser. Failures (bad address, SMTP
+    outage) are logged and swallowed so a broken email never blocks the
+    in-app notification or FCM push that already succeeded."""
+    if not user.email:
+        return
+    try:
+        send_mail(
+            subject="New notification - Madrasa Jamaliyah",
+            message=message,
+            from_email=None,  # uses DEFAULT_FROM_EMAIL
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('Failed to send notification email to %s', user.email)
 
 
 def log_action(request, action, target_model, target):

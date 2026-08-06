@@ -20,7 +20,8 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      LeaveReportStaff, LeaveReportStudent, NotificationStaff,
                      NotificationStudent, Session, Staff, Student,
                      StudentResult, Subject)
-from .utils import csv_response, log_action, paginate, read_csv_rows
+from .utils import (csv_response, log_action, paginate, read_csv_rows,
+                    send_notification_email)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
@@ -870,6 +871,7 @@ def send_student_notification(request):
         data = requests.post(url, data=json.dumps(body), headers=headers)
         notification = NotificationStudent(student=student, message=message)
         notification.save()
+        send_notification_email(student.admin, message)
         return HttpResponse("True")
     except Exception as e:
         logger.exception('Unhandled error in send_student_notification')
@@ -896,6 +898,7 @@ def send_staff_notification(request):
         data = requests.post(url, data=json.dumps(body), headers=headers)
         notification = NotificationStaff(staff=staff, message=message)
         notification.save()
+        send_notification_email(staff.admin, message)
         return HttpResponse("True")
     except Exception as e:
         logger.exception('Unhandled error in send_staff_notification')
