@@ -11,8 +11,9 @@ from django.urls import reverse
 from .forms import FeedbackStaffForm, LeaveReportStaffForm, StaffEditForm
 from .models import (Attendance, AttendanceReport, CustomUser, FeedbackStaff,
                      LeaveReportStaff, LeaveReportStudent, NotificationStaff,
-                     Session, Staff, Student, StudentResult, Subject)
-from .utils import paginate
+                     NotificationStudent, Session, Staff, Student,
+                     StudentResult, Subject)
+from .utils import leave_decision_message, paginate, send_notification_email
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,10 @@ def staff_apply_leave(request):
                 obj = form.save(commit=False)
                 obj.staff = staff
                 obj.save()
+                message = f"{staff} applied for leave on {obj.date}: {obj.message}"
+                # Admin has no in-app notification inbox, so email only.
+                for admin_user in CustomUser.objects.filter(user_type=1):
+                    send_notification_email(admin_user, message)
                 messages.success(
                     request, "Application for leave has been submitted for review")
                 return redirect(reverse('staff_apply_leave'))
@@ -217,6 +222,9 @@ def staff_view_student_leave(request):
             leave = get_object_or_404(LeaveReportStudent, id=id, student__course=staff.course)
             leave.status = status
             leave.save()
+            message = leave_decision_message(leave.date, status)
+            NotificationStudent.objects.create(student=leave.student, message=message)
+            send_notification_email(leave.student.admin, message)
             return HttpResponse(True)
         except Exception:
             logger.exception("Failed to update student leave status")

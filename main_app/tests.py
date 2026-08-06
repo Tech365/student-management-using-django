@@ -3,6 +3,7 @@ import io
 import json
 
 from django.contrib.auth import authenticate
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -10,7 +11,8 @@ from PIL import Image
 
 from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      CustomUser, LeaveReportStaff, LeaveReportStudent,
-                     Session, Staff, Student, StudentResult, Subject)
+                     NotificationStaff, NotificationStudent, Session, Staff,
+                     Student, StudentResult, Subject)
 
 PASSWORD = "pass1234"
 
@@ -650,6 +652,74 @@ class TakeAttendanceLeaveFlagTests(TestCase):
         })
         data = {row['id']: row['on_leave'] for row in json.loads(response.json())}
         self.assertFalse(data[self.on_leave_student.id])
+
+
+class LeaveNotificationTests(TestCase):
+    """Applying for leave, and deciding on it, should notify whoever
+    needs to act/know next - previously nobody was told and had to check
+    manually."""
+
+    def setUp(self):
+        self.course = make_course("Leave Notify Course")
+        self.session = make_session()
+        self.teacher = make_staff("leave_notify_teacher@example.com", self.course)
+        self.student = make_student("leave_notify_student@example.com", self.course, self.session)
+        self.admin_user = make_admin("leave_notify_admin@example.com")
+
+    def test_student_applying_notifies_class_teacher(self):
+        self.client.login(username="leave_notify_student@example.com", password=PASSWORD)
+        mail.outbox = []
+        response = self.client.post(reverse('student_apply_leave'), {
+            'date': '2024-06-15', 'message': 'Feeling unwell',
+        })
+        self.assertEqual(response.status_code, 302)
+        notif = NotificationStaff.objects.get(staff=self.teacher)
+        self.assertIn('Feeling unwell', notif.message)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.teacher.admin.email])
+
+    def test_teacher_decision_notifies_student(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date="2024-06-15", message="Sick", status=0)
+        self.client.login(username="leave_notify_teacher@example.com", password=PASSWORD)
+        mail.outbox = []
+        self.client.post(reverse('staff_view_student_leave'), {'id': leave.id, 'status': '1'})
+        notif = NotificationStudent.objects.get(student=self.student)
+        self.assertIn('approved', notif.message)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.student.admin.email])
+
+    def test_admin_decision_notifies_student(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date="2024-06-15", message="Sick", status=0)
+        self.client.login(username="leave_notify_admin@example.com", password=PASSWORD)
+        mail.outbox = []
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '-1'})
+        notif = NotificationStudent.objects.get(student=self.student)
+        self.assertIn('rejected', notif.message)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_staff_applying_notifies_admin_by_email_only(self):
+        self.client.login(username="leave_notify_teacher@example.com", password=PASSWORD)
+        mail.outbox = []
+        response = self.client.post(reverse('staff_apply_leave'), {
+            'date': '2024-06-15', 'message': 'Family event',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.admin_user.email])
+        self.assertIn('Family event', mail.outbox[0].body)
+
+    def test_admin_decision_on_staff_leave_notifies_staff(self):
+        leave = LeaveReportStaff.objects.create(
+            staff=self.teacher, date="2024-06-15", message="Family event", status=0)
+        self.client.login(username="leave_notify_admin@example.com", password=PASSWORD)
+        mail.outbox = []
+        self.client.post(reverse('view_staff_leave'), {'id': leave.id, 'status': '1'})
+        notif = NotificationStaff.objects.get(staff=self.teacher, message__icontains="approved")
+        self.assertIsNotNone(notif)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.teacher.admin.email])
 
 
 class ResultsReportTests(TestCase):

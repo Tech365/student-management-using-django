@@ -63,6 +63,12 @@ def send_notification_email(user, message):
         logger.exception('Failed to send notification email to %s', user.email)
 
 
+def leave_decision_message(leave_date, status):
+    """Message text for a leave application's approve/reject decision."""
+    verdict = "approved" if status == 1 else "rejected"
+    return f"Your leave application for {leave_date} was {verdict}."
+
+
 def log_action(request, action, target_model, target):
     """Record an admin mutation (create/update/delete/activate/deactivate)
     to the AuditLog. Imported lazily to avoid a circular import with

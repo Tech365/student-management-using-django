@@ -20,8 +20,8 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      LeaveReportStaff, LeaveReportStudent, NotificationStaff,
                      NotificationStudent, Session, Staff, Student,
                      StudentResult, Subject)
-from .utils import (csv_response, log_action, paginate, read_csv_rows,
-                    send_notification_email)
+from .utils import (csv_response, leave_decision_message, log_action,
+                    paginate, read_csv_rows, send_notification_email)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
@@ -729,6 +729,9 @@ def view_staff_leave(request):
             leave = get_object_or_404(LeaveReportStaff, id=id)
             leave.status = status
             leave.save()
+            message = leave_decision_message(leave.date, status)
+            NotificationStaff.objects.create(staff=leave.staff, message=message)
+            send_notification_email(leave.staff.admin, message)
             return HttpResponse(True)
         except Exception as e:
             logger.exception("Failed to update staff leave status")
@@ -755,6 +758,9 @@ def view_student_leave(request):
             leave = get_object_or_404(LeaveReportStudent, id=id)
             leave.status = status
             leave.save()
+            message = leave_decision_message(leave.date, status)
+            NotificationStudent.objects.create(student=leave.student, message=message)
+            send_notification_email(leave.student.admin, message)
             return HttpResponse(True)
         except Exception as e:
             logger.exception("Failed to update student leave status")

@@ -13,8 +13,10 @@ from django.urls import reverse
 from .forms import (FeedbackStudentForm, LeaveReportStudentForm,
                     StudentEditForm)
 from .models import (Attendance, AttendanceReport, Course, CustomUser,
-                     FeedbackStudent, LeaveReportStudent, NotificationStudent,
-                     Student, StudentResult, Subject)
+                     FeedbackStudent, LeaveReportStudent, NotificationStaff,
+                     NotificationStudent, Staff, Student, StudentResult,
+                     Subject)
+from .utils import send_notification_email
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +104,10 @@ def student_apply_leave(request):
                 obj = form.save(commit=False)
                 obj.student = student
                 obj.save()
+                message = f"{student} applied for leave on {obj.date}: {obj.message}"
+                for teacher in Staff.objects.filter(course=student.course):
+                    NotificationStaff.objects.create(staff=teacher, message=message)
+                    send_notification_email(teacher.admin, message)
                 messages.success(
                     request, "Application for leave has been submitted for review")
                 return redirect(reverse('student_apply_leave'))
