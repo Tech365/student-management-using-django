@@ -58,16 +58,28 @@ def staff_take_attendance(request):
 def get_students(request):
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
+    attendance_date = request.POST.get('date')
     try:
         subject = get_object_or_404(Subject, id=subject_id)
         session = get_object_or_404(Session, id=session_id)
         students = Student.objects.filter(
             course_id=subject.course.id, session=session)
+        on_leave_ids = set()
+        if attendance_date:
+            # LeaveReportStudent.date is a free-text field fed by the same
+            # HTML5 date input as attendance_date, so a plain string match
+            # is reliable here.
+            on_leave_ids = set(
+                LeaveReportStudent.objects.filter(
+                    student__in=students, date=attendance_date, status=1
+                ).values_list('student_id', flat=True)
+            )
         student_data = []
         for student in students:
             data = {
                     "id": student.id,
-                    "name": student.admin.last_name + " " + student.admin.first_name
+                    "name": student.admin.last_name + " " + student.admin.first_name,
+                    "on_leave": student.id in on_leave_ids,
                     }
             student_data.append(data)
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)

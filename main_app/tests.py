@@ -452,6 +452,37 @@ class AttendanceSummaryReportTests(TestCase):
         self.assertIn('Report Course', body)
         self.assertIn('50.0%', body)
 
+    def test_approved_leave_day_excluded_from_percentage(self):
+        # A 3rd student, absent only because of an approved leave, should
+        # not drag the percentage down or count toward the total.
+        leave_student = make_student("report_leave_excl_student@example.com", self.course, self.session)
+        attendance = Attendance.objects.get(date=datetime.date(2024, 6, 15))
+        AttendanceReport.objects.create(student=leave_student, attendance=attendance, status=False)
+        LeaveReportStudent.objects.create(
+            student=leave_student, date="2024-06-15", message="Sick", status=1)
+
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        summary = response.context['course_summary']
+        self.assertEqual(summary[0]['total'], 2)
+        self.assertEqual(summary[0]['present'], 1)
+        self.assertEqual(summary[0]['percent'], 50.0)
+
+    def test_pending_leave_still_counts_as_absent(self):
+        leave_student = make_student("report_pending_leave_student@example.com", self.course, self.session)
+        attendance = Attendance.objects.get(date=datetime.date(2024, 6, 15))
+        AttendanceReport.objects.create(student=leave_student, attendance=attendance, status=False)
+        LeaveReportStudent.objects.create(
+            student=leave_student, date="2024-06-15", message="Sick", status=0)
+
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        summary = response.context['course_summary']
+        self.assertEqual(summary[0]['total'], 3)
+        self.assertEqual(summary[0]['present'], 1)
+
 
 class StudentAttendanceReportTests(TestCase):
     def setUp(self):
@@ -481,6 +512,23 @@ class StudentAttendanceReportTests(TestCase):
     def test_csv_requires_student(self):
         response = self.client.get(reverse('report_student_attendance_csv'))
         self.assertEqual(response.status_code, 400)
+
+    def test_approved_leave_excluded_from_summary_but_visible_in_history(self):
+        leave_attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=datetime.date(2024, 6, 20))
+        AttendanceReport.objects.create(student=self.student, attendance=leave_attendance, status=False)
+        LeaveReportStudent.objects.create(
+            student=self.student, date="2024-06-20", message="Sick", status=1)
+
+        response = self.client.get(reverse('report_student_attendance'), {'student': self.student.id})
+        summary = response.context['summary']
+        # Still 1/1 = 100%: the leave-day absence doesn't count.
+        self.assertEqual(summary['total'], 1)
+        self.assertEqual(summary['present'], 1)
+        self.assertEqual(summary['percent'], 100.0)
+        # But the leave day's own attendance row is still visible in the
+        # raw history list for auditing.
+        self.assertEqual(len(response.context['records']), 2)
 
     def test_csv_export_with_student(self):
         response = self.client.get(reverse('report_student_attendance_csv'), {'student': self.student.id})
@@ -562,6 +610,46 @@ class StaffStudentLeaveApprovalTests(TestCase):
         self.assertEqual(response.content.decode(), 'False')
         self.leave_b.refresh_from_db()
         self.assertEqual(self.leave_b.status, 0)
+
+
+class TakeAttendanceLeaveFlagTests(TestCase):
+    """get_students (used by the take-attendance screen) should flag
+    students with an approved leave for the selected date, so a teacher
+    doesn't default-mark them present without realizing."""
+
+    def setUp(self):
+        self.course = make_course("Attendance Leave Course")
+        self.session = make_session()
+        self.teacher = make_staff("attendance_leave_teacher@example.com", self.course)
+        self.subject = Subject.objects.create(name="Attendance Leave Subject", staff=self.teacher, course=self.course)
+        self.on_leave_student = make_student("attendance_leave_on@example.com", self.course, self.session)
+        self.other_student = make_student("attendance_leave_off@example.com", self.course, self.session)
+        LeaveReportStudent.objects.create(
+            student=self.on_leave_student, date="2024-06-15", message="Sick", status=1)
+        self.client.login(username="attendance_leave_teacher@example.com", password=PASSWORD)
+
+    def test_approved_leave_on_date_is_flagged(self):
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-15',
+        })
+        data = {row['id']: row['on_leave'] for row in json.loads(response.json())}
+        self.assertTrue(data[self.on_leave_student.id])
+        self.assertFalse(data[self.other_student.id])
+
+    def test_leave_on_a_different_date_not_flagged(self):
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-16',
+        })
+        data = {row['id']: row['on_leave'] for row in json.loads(response.json())}
+        self.assertFalse(data[self.on_leave_student.id])
+
+    def test_pending_leave_not_flagged(self):
+        LeaveReportStudent.objects.filter(student=self.on_leave_student).update(status=0)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-15',
+        })
+        data = {row['id']: row['on_leave'] for row in json.loads(response.json())}
+        self.assertFalse(data[self.on_leave_student.id])
 
 
 class ResultsReportTests(TestCase):

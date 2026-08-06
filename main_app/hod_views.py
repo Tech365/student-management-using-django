@@ -1009,6 +1009,26 @@ def delete_session(request, session_id):
 # Reports
 # ---------------------------------------------------------------------------
 
+def _exclude_approved_leave(reports):
+    """Drop AttendanceReport rows that fall on a date the student had an
+    approved leave application for, so a leave day counts neither as
+    present nor absent in attendance-percentage/chronic-absence math.
+    LeaveReportStudent.date is a free-text CharField (fed by an HTML5
+    date input, so it's a 'YYYY-MM-DD' string), while Attendance.date is
+    a real DateField - compare them as strings in Python rather than
+    relying on the DB to coerce mismatched column types."""
+    approved_leave_days = set(
+        LeaveReportStudent.objects.filter(status=1).values_list('student_id', 'date')
+    )
+    if not approved_leave_days:
+        return reports
+    excluded_ids = [
+        row['id'] for row in reports.values('id', 'student_id', leave_date=F('attendance__date'))
+        if (row['student_id'], row['leave_date'].isoformat()) in approved_leave_days
+    ]
+    return reports.exclude(id__in=excluded_ids) if excluded_ids else reports
+
+
 def _attendance_summary_data(request):
     course_id = request.GET.get('course') or ''
     session_id = request.GET.get('session') or ''
@@ -1021,6 +1041,7 @@ def _attendance_summary_data(request):
         reports = reports.filter(attendance__subject__course_id=course_id)
     if session_id:
         reports = reports.filter(attendance__session_id=session_id)
+    reports = _exclude_approved_leave(reports)
 
     def with_percent(rows, key):
         summary = []
@@ -1127,8 +1148,11 @@ def report_student_attendance(request):
         if end_date:
             reports = reports.filter(attendance__date__lte=end_date)
         reports = reports.order_by('-attendance__date')
-        total = reports.count()
-        present = reports.filter(status=True).count()
+        # Leave days stay visible in the raw history below, but don't
+        # count toward the present/absent percentage.
+        counted = _exclude_approved_leave(reports)
+        total = counted.count()
+        present = counted.filter(status=True).count()
         summary = {
             'student': student,
             'total': total,
