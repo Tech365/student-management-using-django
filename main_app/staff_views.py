@@ -105,13 +105,12 @@ def save_attendance(request):
         for student_dict in students:
             student = get_object_or_404(Student, id=student_dict.get('id'))
 
-            # Check if an attendance report already exists for the student and the attendance object
-            attendance_report, report_created = AttendanceReport.objects.get_or_create(student=student, attendance=attendance)
-
-            # Update the status only if the attendance report was newly created
-            if report_created:
-                attendance_report.status = student_dict.get('status')
-                attendance_report.save()
+            # get_or_create so re-taking attendance for the same
+            # student/date (e.g. correcting a mistake) updates the
+            # existing report instead of creating a duplicate.
+            attendance_report, _ = AttendanceReport.objects.get_or_create(student=student, attendance=attendance)
+            attendance_report.status = student_dict.get('status')
+            attendance_report.save()
 
     except Exception as e:
         logger.exception("Failed to save attendance")

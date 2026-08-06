@@ -209,6 +209,42 @@ class AttendanceUpdateRoutingTests(TestCase):
         self.assertTrue(self.report.status)
 
 
+class SaveAttendanceTests(TestCase):
+    """Regression test: save_attendance (the Take Attendance screen) used
+    to only write status on first creation of the AttendanceReport, so
+    re-taking attendance for the same subject/session/date (e.g. to
+    correct a mistake) silently kept the original status forever."""
+
+    def setUp(self):
+        self.course = make_course()
+        self.session = make_session()
+        self.staff = make_staff("save_attendance_staff@example.com", self.course)
+        self.subject = Subject.objects.create(name="Physics", staff=self.staff, course=self.course)
+        self.student = make_student("save_attendance_student@example.com", self.course, self.session)
+        self.client.login(username="save_attendance_staff@example.com", password=PASSWORD)
+
+    def test_retaking_attendance_updates_existing_status(self):
+        payload = {
+            'date': '2026-08-08',
+            'subject': self.subject.id,
+            'session': self.session.id,
+        }
+        # First save: marked Present.
+        self.client.post(reverse('save_attendance'), {
+            **payload, 'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        report = AttendanceReport.objects.get(student=self.student)
+        self.assertTrue(report.status)
+
+        # Second save for the same date/subject/session: corrected to Absent.
+        self.client.post(reverse('save_attendance'), {
+            **payload, 'student_ids': json.dumps([{'id': self.student.id, 'status': 0}]),
+        })
+        report.refresh_from_db()
+        self.assertFalse(report.status)
+        self.assertEqual(AttendanceReport.objects.filter(student=self.student).count(), 1)
+
+
 class CsrfEnforcementTests(TestCase):
     """Regression test for the AJAX endpoints that used to be @csrf_exempt:
     they must now reject requests without a valid CSRF token."""
