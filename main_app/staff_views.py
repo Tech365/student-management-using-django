@@ -56,6 +56,19 @@ def staff_take_attendance(request):
     return render(request, 'staff_template/staff_take_attendance.html', context)
 
 
+def _approved_leave_student_ids(students, attendance_date):
+    """IDs of `students` with an approved leave for `attendance_date`.
+    LeaveReportStudent.date is a free-text field fed by the same HTML5
+    date input as attendance_date, so a plain string match is reliable."""
+    if not attendance_date:
+        return set()
+    return set(
+        LeaveReportStudent.objects.filter(
+            student__in=students, date=attendance_date, status=1
+        ).values_list('student_id', flat=True)
+    )
+
+
 def get_students(request):
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
@@ -65,16 +78,7 @@ def get_students(request):
         session = get_object_or_404(Session, id=session_id)
         students = Student.objects.filter(
             course_id=subject.course.id, session=session)
-        on_leave_ids = set()
-        if attendance_date:
-            # LeaveReportStudent.date is a free-text field fed by the same
-            # HTML5 date input as attendance_date, so a plain string match
-            # is reliable here.
-            on_leave_ids = set(
-                LeaveReportStudent.objects.filter(
-                    student__in=students, date=attendance_date, status=1
-                ).values_list('student_id', flat=True)
-            )
+        on_leave_ids = _approved_leave_student_ids(students, attendance_date)
         student_data = []
         for student in students:
             data = {
@@ -102,8 +106,16 @@ def save_attendance(request):
         # Check if an attendance object already exists for the given date and session
         attendance, created = Attendance.objects.get_or_create(session=session, subject=subject, date=date)
 
+        submitted_ids = [student_dict.get('id') for student_dict in students]
+        on_leave_ids = _approved_leave_student_ids(
+            Student.objects.filter(id__in=submitted_ids), date)
+
         for student_dict in students:
             student = get_object_or_404(Student, id=student_dict.get('id'))
+            if student.id in on_leave_ids:
+                # Approved leave for this date - don't record attendance
+                # for them at all, even if the client tried to send one.
+                continue
 
             # get_or_create so re-taking attendance for the same
             # student/date (e.g. correcting a mistake) updates the

@@ -244,6 +244,24 @@ class SaveAttendanceTests(TestCase):
         self.assertFalse(report.status)
         self.assertEqual(AttendanceReport.objects.filter(student=self.student).count(), 1)
 
+    def test_approved_leave_student_not_recorded_even_if_submitted(self):
+        LeaveReportStudent.objects.create(
+            student=self.student, date="2026-08-08", message="Sick", status=1)
+        self.client.post(reverse('save_attendance'), {
+            'date': '2026-08-08', 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertFalse(AttendanceReport.objects.filter(student=self.student).exists())
+
+    def test_pending_leave_student_still_recorded(self):
+        LeaveReportStudent.objects.create(
+            student=self.student, date="2026-08-08", message="Sick", status=0)
+        self.client.post(reverse('save_attendance'), {
+            'date': '2026-08-08', 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertTrue(AttendanceReport.objects.filter(student=self.student).exists())
+
 
 class CsrfEnforcementTests(TestCase):
     """Regression test for the AJAX endpoints that used to be @csrf_exempt:
