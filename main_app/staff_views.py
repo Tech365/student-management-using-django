@@ -147,13 +147,26 @@ def staff_update_attendance(request):
 def get_student_attendance(request):
     attendance_date_id = request.POST.get('attendance_date_id')
     try:
-        date = get_object_or_404(Attendance, id=attendance_date_id)
-        attendance_data = AttendanceReport.objects.filter(attendance=date)
+        attendance = get_object_or_404(Attendance, id=attendance_date_id)
+        # The full class roster, not just students with an existing
+        # AttendanceReport - a student on approved leave never gets one
+        # (see save_attendance), but should still show up here, disabled,
+        # rather than silently disappearing from the list.
+        students = Student.objects.filter(
+            course_id=attendance.subject.course_id, session=attendance.session)
+        reports_by_student = {
+            r.student_id: r for r in AttendanceReport.objects.filter(attendance=attendance)
+        }
+        on_leave_ids = _approved_leave_student_ids(students, attendance.date.isoformat())
         student_data = []
-        for attendance in attendance_data:
-            data = {"id": attendance.student.admin.id,
-                    "name": attendance.student.admin.last_name + " " + attendance.student.admin.first_name,
-                    "status": attendance.status}
+        for student in students:
+            report = reports_by_student.get(student.id)
+            data = {
+                "id": student.admin.id,
+                "name": student.admin.last_name + " " + student.admin.first_name,
+                "status": report.status if report else None,
+                "on_leave": student.id in on_leave_ids,
+            }
             student_data.append(data)
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
     except Exception as e:
@@ -168,9 +181,20 @@ def update_attendance(request):
     try:
         attendance = get_object_or_404(Attendance, id=date)
 
+        admin_ids = [student_dict.get('id') for student_dict in students]
+        students_by_admin_id = {
+            s.admin_id: s for s in Student.objects.filter(admin_id__in=admin_ids)
+        }
+        on_leave_ids = _approved_leave_student_ids(
+            students_by_admin_id.values(), attendance.date.isoformat())
+
         for student_dict in students:
-            student = get_object_or_404(
-                Student, admin_id=student_dict.get('id'))
+            student = students_by_admin_id.get(student_dict.get('id')) \
+                or get_object_or_404(Student, admin_id=student_dict.get('id'))
+            if student.id in on_leave_ids:
+                # Approved leave for this date - don't record attendance
+                # for them at all, even if the client tried to send one.
+                continue
             attendance_report = get_object_or_404(AttendanceReport, student=student, attendance=attendance)
             attendance_report.status = student_dict.get('status')
             attendance_report.save()

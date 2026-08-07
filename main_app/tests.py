@@ -263,6 +263,76 @@ class SaveAttendanceTests(TestCase):
         self.assertTrue(AttendanceReport.objects.filter(student=self.student).exists())
 
 
+class ViewUpdateAttendanceLeaveTests(TestCase):
+    """A student on approved leave never gets an AttendanceReport (see
+    SaveAttendanceTests), but should still show up - disabled - in
+    View/Update Attendance instead of silently disappearing from the
+    roster for that date."""
+
+    def setUp(self):
+        self.course = make_course()
+        self.session = make_session()
+        self.staff = make_staff("vu_attendance_staff@example.com", self.course)
+        self.subject = Subject.objects.create(name="Chemistry2", staff=self.staff, course=self.course)
+        self.present_student = make_student("vu_present_student@example.com", self.course, self.session)
+        self.leave_student = make_student("vu_leave_student@example.com", self.course, self.session)
+        self.attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=datetime.date(2026, 8, 8))
+        AttendanceReport.objects.create(
+            student=self.present_student, attendance=self.attendance, status=True)
+        LeaveReportStudent.objects.create(
+            student=self.leave_student, date="2026-08-08", message="Sick", status=1)
+        self.client.login(username="vu_attendance_staff@example.com", password=PASSWORD)
+
+    def test_on_leave_student_appears_flagged_with_no_status(self):
+        response = self.client.post(reverse('get_student_attendance'), {
+            'attendance_date_id': self.attendance.id,
+        })
+        rows = {row['id']: row for row in json.loads(response.json())}
+        leave_row = rows[self.leave_student.admin_id]
+        self.assertTrue(leave_row['on_leave'])
+        self.assertIsNone(leave_row['status'])
+        present_row = rows[self.present_student.admin_id]
+        self.assertFalse(present_row['on_leave'])
+        self.assertTrue(present_row['status'])
+
+    def test_update_attendance_ignores_on_leave_student_even_if_submitted(self):
+        self.client.post(reverse('update_attendance'), {
+            'date': self.attendance.id,
+            'student_ids': json.dumps([
+                {'id': self.present_student.admin_id, 'status': 0},
+                {'id': self.leave_student.admin_id, 'status': 1},
+            ]),
+        })
+        self.assertFalse(AttendanceReport.objects.filter(student=self.present_student).first().status)
+        self.assertFalse(AttendanceReport.objects.filter(student=self.leave_student).exists())
+
+
+class AdminViewAttendanceLeaveTests(TestCase):
+    """Same fix on the HOD/admin read-only attendance view."""
+
+    def setUp(self):
+        make_admin("admin_view_attendance_admin@example.com")
+        self.client.login(username="admin_view_attendance_admin@example.com", password=PASSWORD)
+        self.course = make_course()
+        self.session = make_session()
+        staff = make_staff("admin_view_attendance_staff@example.com", self.course)
+        self.subject = Subject.objects.create(name="Chemistry3", staff=staff, course=self.course)
+        self.leave_student = make_student("admin_view_leave_student@example.com", self.course, self.session)
+        self.attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=datetime.date(2026, 8, 8))
+        LeaveReportStudent.objects.create(
+            student=self.leave_student, date="2026-08-08", message="Sick", status=1)
+
+    def test_on_leave_student_shown_as_on_leave(self):
+        response = self.client.post(reverse('get_admin_attendance'), {
+            'subject': self.subject.id, 'session': self.session.id,
+            'attendance_date_id': self.attendance.id,
+        })
+        rows = json.loads(response.json())
+        self.assertEqual(rows[0]['status'], 'On Leave')
+
+
 class CsrfEnforcementTests(TestCase):
     """Regression test for the AJAX endpoints that used to be @csrf_exempt:
     they must now reject requests without a valid CSRF token."""

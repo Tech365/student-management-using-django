@@ -788,15 +788,23 @@ def get_admin_attendance(request):
         session = get_object_or_404(Session, id=session_id)
         attendance = get_object_or_404(
             Attendance, id=attendance_date_id, session=session)
-        attendance_reports = AttendanceReport.objects.filter(
-            attendance=attendance)
+        # The full class roster, not just students with an existing
+        # AttendanceReport - a student on approved leave never gets one,
+        # but should still be visible here rather than disappearing.
+        students = Student.objects.filter(course_id=subject.course_id, session=session)
+        reports_by_student = {
+            r.student_id: r for r in AttendanceReport.objects.filter(attendance=attendance)
+        }
+        on_leave_ids = set(
+            LeaveReportStudent.objects.filter(
+                student__in=students, date=attendance.date.isoformat(), status=1
+            ).values_list('student_id', flat=True)
+        )
         json_data = []
-        for report in attendance_reports:
-            data = {
-                "status":  str(report.status),
-                "name": str(report.student)
-            }
-            json_data.append(data)
+        for student in students:
+            report = reports_by_student.get(student.id)
+            status = "On Leave" if student.id in on_leave_ids else str(bool(report.status)) if report else "Not Recorded"
+            json_data.append({"status": status, "name": str(student)})
         return JsonResponse(json.dumps(json_data), safe=False)
     except Exception as e:
         logger.exception("Failed to fetch admin attendance")
