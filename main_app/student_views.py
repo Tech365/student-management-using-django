@@ -105,9 +105,13 @@ def student_apply_leave(request):
                 obj.student = student
                 obj.save()
                 message = f"{student} applied for leave on {obj.date}: {obj.message}"
-                for teacher in Staff.objects.filter(course=student.course):
-                    NotificationStaff.objects.create(staff=teacher, message=message)
-                    send_notification_email(teacher.admin, message)
+                # student.course=None must notify nobody - matching on
+                # course=None would otherwise hit every other courseless
+                # staff member, since both sides compare as NULL.
+                if student.course is not None:
+                    for teacher in Staff.objects.filter(course=student.course):
+                        NotificationStaff.objects.create(staff=teacher, message=message)
+                        send_notification_email(teacher.admin, message)
                 messages.success(
                     request, "Application for leave has been submitted for review")
                 return redirect(reverse('student_apply_leave'))

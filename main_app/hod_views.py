@@ -727,6 +727,9 @@ def view_staff_leave(request):
             status = -1
         try:
             leave = get_object_or_404(LeaveReportStaff, id=id)
+            if leave.status != 0:
+                # Already decided - don't overwrite or send a duplicate notification.
+                return HttpResponse(False)
             leave.status = status
             leave.save()
             message = leave_decision_message(leave.date, status)
@@ -756,6 +759,9 @@ def view_student_leave(request):
             status = -1
         try:
             leave = get_object_or_404(LeaveReportStudent, id=id)
+            if leave.status != 0:
+                # Already decided - don't overwrite or send a duplicate notification.
+                return HttpResponse(False)
             leave.status = status
             leave.save()
             message = leave_decision_message(leave.date, status)

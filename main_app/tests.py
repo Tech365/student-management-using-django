@@ -766,6 +766,67 @@ class StaffStudentLeaveApprovalTests(TestCase):
         self.leave_b.refresh_from_db()
         self.assertEqual(self.leave_b.status, 0)
 
+    def test_already_decided_leave_cannot_be_redecided(self):
+        # Simulates the admin (or a duplicate click) deciding a leave
+        # request the teacher's page is also showing as still pending.
+        self.leave_a.status = 1
+        self.leave_a.save()
+        mail.outbox = []
+        response = self.client.post(reverse('staff_view_student_leave'), {
+            'id': self.leave_a.id, 'status': '-1',
+        })
+        self.assertEqual(response.content.decode(), 'False')
+        self.leave_a.refresh_from_db()
+        self.assertEqual(self.leave_a.status, 1)
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class LeaveNullCourseScopingTests(TestCase):
+    """Staff.course and Student.course are nullable (a new account has no
+    course until an admin assigns one, e.g. via Django admin without ever
+    touching the app's own Edit Staff/Student screens). Filtering
+    LeaveReportStudent by `student__course=staff.course` when that's None
+    compiles to `course_id IS NULL`, which would match every OTHER
+    courseless student too - not "no results". Both sides of that must be
+    explicitly guarded rather than relying on the ORM filter."""
+
+    def setUp(self):
+        self.session = make_session()
+        self.course = make_course("Null Scoping Course")
+        # Courseless teacher and courseless student - NOT the same class,
+        # just both happen to have course=None.
+        self.courseless_teacher = make_staff("courseless_teacher@example.com", self.course)
+        self.courseless_teacher.course = None
+        self.courseless_teacher.save()
+        self.courseless_student = make_student("courseless_student@example.com", self.course, self.session)
+        self.courseless_student.course = None
+        self.courseless_student.save()
+        self.leave = LeaveReportStudent.objects.create(
+            student=self.courseless_student, date="2024-06-10", message="Sick", status=0)
+
+    def test_courseless_teacher_sees_no_leave_requests(self):
+        self.client.login(username="courseless_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_view_student_leave'))
+        self.assertEqual(list(response.context['allLeave']), [])
+
+    def test_courseless_teacher_cannot_approve_courseless_students_leave(self):
+        self.client.login(username="courseless_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('staff_view_student_leave'), {
+            'id': self.leave.id, 'status': '1',
+        })
+        self.assertEqual(response.content.decode(), 'False')
+        self.leave.refresh_from_db()
+        self.assertEqual(self.leave.status, 0)
+
+    def test_courseless_student_applying_notifies_nobody(self):
+        self.client.login(username="courseless_student@example.com", password=PASSWORD)
+        mail.outbox = []
+        self.client.post(reverse('student_apply_leave'), {
+            'date': '2024-06-12', 'message': 'Feeling unwell',
+        })
+        self.assertFalse(NotificationStaff.objects.filter(staff=self.courseless_teacher).exists())
+        self.assertEqual(len(mail.outbox), 0)
+
 
 class TakeAttendanceLeaveFlagTests(TestCase):
     """get_students (used by the take-attendance screen) should flag
@@ -873,6 +934,30 @@ class LeaveNotificationTests(TestCase):
         self.assertIsNotNone(notif)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.teacher.admin.email])
+
+    def test_admin_cannot_redecide_already_decided_student_leave(self):
+        # e.g. the teacher already approved it via staff_view_student_leave
+        # before the admin's page (also showing it as pending) submits.
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date="2024-06-15", message="Sick", status=1)
+        self.client.login(username="leave_notify_admin@example.com", password=PASSWORD)
+        mail.outbox = []
+        response = self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '-1'})
+        self.assertEqual(response.content.decode(), 'False')
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, 1)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_admin_cannot_redecide_already_decided_staff_leave(self):
+        leave = LeaveReportStaff.objects.create(
+            staff=self.teacher, date="2024-06-15", message="Family event", status=-1)
+        self.client.login(username="leave_notify_admin@example.com", password=PASSWORD)
+        mail.outbox = []
+        response = self.client.post(reverse('view_staff_leave'), {'id': leave.id, 'status': '1'})
+        self.assertEqual(response.content.decode(), 'False')
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, -1)
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class ResultsReportTests(TestCase):
