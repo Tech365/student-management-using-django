@@ -61,7 +61,7 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Course</th><th>Total</th><th>Present</th><th>Absent</th><th>Attendance %</th></tr>
+                                    <tr><th>Course</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for row in course_summary %}
@@ -70,10 +70,11 @@
                                         <td>{{ row.total }}</td>
                                         <td>{{ row.present }}</td>
                                         <td>{{ row.absent }}</td>
+                                        <td>{{ row.leave }}</td>
                                         <td>{{ row.percent }}%</td>
                                     </tr>
                                     {% empty %}
-                                    <tr><td colspan="5" class="text-muted">No attendance recorded for this range.</td></tr>
+                                    <tr><td colspan="6" class="text-muted">No attendance recorded for this range.</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -87,7 +88,7 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Date</th><th>Total</th><th>Present</th><th>Absent</th><th>Attendance %</th></tr>
+                                    <tr><th>Date</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for row in daily_summary %}
@@ -96,10 +97,11 @@
                                         <td>{{ row.total }}</td>
                                         <td>{{ row.present }}</td>
                                         <td>{{ row.absent }}</td>
+                                        <td>{{ row.leave }}</td>
                                         <td>{{ row.percent }}%</td>
                                     </tr>
                                     {% empty %}
-                                    <tr><td colspan="5" class="text-muted">No attendance recorded for this range.</td></tr>
+                                    <tr><td colspan="6" class="text-muted">No attendance recorded for this range.</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -122,7 +124,7 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Student</th><th>Total</th><th>Present</th><th>Absent</th><th>Attendance %</th><th></th></tr>
+                                    <tr><th>Student</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th><th></th></tr>
                                 </thead>
                                 <tbody>
                                     {% for row in student_summary %}
@@ -131,6 +133,7 @@
                                         <td>{{ row.total }}</td>
                                         <td>{{ row.present }}</td>
                                         <td>{{ row.absent }}</td>
+                                        <td>{{ row.leave }}</td>
                                         <td>{{ row.percent }}%</td>
                                         <td>
                                             {% if row.flagged %}
@@ -139,7 +142,7 @@
                                         </td>
                                     </tr>
                                     {% empty %}
-                                    <tr><td colspan="6" class="text-muted">No attendance recorded for this range.</td></tr>
+                                    <tr><td colspan="7" class="text-muted">No attendance recorded for this range.</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>

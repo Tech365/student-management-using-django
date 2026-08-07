@@ -594,6 +594,34 @@ class AttendanceSummaryReportTests(TestCase):
         self.assertEqual(summary[0]['total'], 2)
         self.assertEqual(summary[0]['present'], 1)
         self.assertEqual(summary[0]['percent'], 50.0)
+        self.assertEqual(summary[0]['leave'], 1)
+
+        student_row = {r['name']: r for r in response.context['student_summary']}[str(leave_student)]
+        self.assertEqual(student_row['leave'], 1)
+        day_row = response.context['daily_summary'][0]
+        self.assertEqual(day_row['leave'], 1)
+
+        csv_response = self.client.get(reverse('report_attendance_summary_csv'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        self.assertIn('Leave', csv_response.content.decode())
+
+    def test_student_with_only_leave_records_still_shown_not_flagged(self):
+        # A student whose ONLY record in range is an approved leave (no
+        # AttendanceReport at all, matching current Take Attendance
+        # behavior) must not just vanish from the by-student table.
+        leave_only_student = make_student("report_leave_only_student@example.com", self.course, self.session)
+        LeaveReportStudent.objects.create(
+            student=leave_only_student, date="2024-06-15", message="Sick", status=1)
+
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        by_name = {r['name']: r for r in response.context['student_summary']}
+        row = by_name[str(leave_only_student)]
+        self.assertEqual(row['total'], 0)
+        self.assertEqual(row['leave'], 1)
+        self.assertFalse(row['flagged'])
 
     def test_pending_leave_still_counts_as_absent(self):
         leave_student = make_student("report_pending_leave_student@example.com", self.course, self.session)
@@ -652,6 +680,7 @@ class StudentAttendanceReportTests(TestCase):
         self.assertEqual(summary['total'], 1)
         self.assertEqual(summary['present'], 1)
         self.assertEqual(summary['percent'], 100.0)
+        self.assertEqual(summary['leave'], 1)
         # But the leave day's own attendance row is still visible in the
         # raw history list for auditing.
         self.assertEqual(len(response.context['records']), 2)

@@ -1043,6 +1043,33 @@ def _exclude_approved_leave(reports):
     return reports.exclude(id__in=excluded_ids) if excluded_ids else reports
 
 
+def _approved_leave_counts(course_id, session_id, start_date, end_date):
+    """Approved-leave day counts grouped by course name, date, and
+    student, scoped the same way as the attendance queryset - so the
+    reports can show a Leave column even though a leave day never gets
+    an AttendanceReport row of its own."""
+    leaves = LeaveReportStudent.objects.filter(
+        status=1, date__gte=start_date, date__lte=end_date)
+    if course_id:
+        leaves = leaves.filter(student__course_id=course_id)
+    if session_id:
+        leaves = leaves.filter(student__session_id=session_id)
+
+    by_course = dict(
+        leaves.values('student__course__name')
+        .annotate(count=Count('id')).values_list('student__course__name', 'count')
+    )
+    by_day = dict(
+        leaves.values('date')
+        .annotate(count=Count('id')).values_list('date', 'count')
+    )
+    by_student = dict(
+        leaves.values('student_id')
+        .annotate(count=Count('id')).values_list('student_id', 'count')
+    )
+    return by_course, by_day, by_student
+
+
 def _attendance_summary_data(request):
     course_id = request.GET.get('course') or ''
     session_id = request.GET.get('session') or ''
@@ -1057,7 +1084,10 @@ def _attendance_summary_data(request):
         reports = reports.filter(attendance__session_id=session_id)
     reports = _exclude_approved_leave(reports)
 
-    def with_percent(rows, key):
+    leave_by_course, leave_by_day, leave_by_student = _approved_leave_counts(
+        course_id, session_id, start_date, end_date)
+
+    def with_percent(rows, key, leave_lookup, key_to_lookup=lambda v: v):
         summary = []
         for row in rows:
             total = row['total']
@@ -1068,6 +1098,7 @@ def _attendance_summary_data(request):
                 'present': present,
                 'absent': total - present,
                 'percent': round(present / total * 100, 1) if total else 0,
+                'leave': leave_lookup.get(key_to_lookup(row[key]), 0),
             })
         return summary
 
@@ -1086,18 +1117,38 @@ def _attendance_summary_data(request):
         .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
     )
     student_summary = []
+    seen_student_ids = set()
     for row in by_student_raw:
         total = row['total']
         present = row['present']
         percent = round(present / total * 100, 1) if total else 0
+        seen_student_ids.add(row['student_id'])
         student_summary.append({
             'name': f"{row['student__admin__last_name']}, {row['student__admin__first_name']}",
             'total': total,
             'present': present,
             'absent': total - present,
             'percent': percent,
+            'leave': leave_by_student.get(row['student_id'], 0),
             'flagged': percent < CHRONIC_ABSENCE_THRESHOLD,
         })
+    # A student whose only records in range were approved leave has no
+    # AttendanceReport rows left after exclusion, so they'd otherwise be
+    # missing from this table entirely - add them with 0 total, so the
+    # leave column stays visible instead of the student just vanishing.
+    # Not flagged: they were never actually absent.
+    leave_only_ids = set(leave_by_student) - seen_student_ids
+    if leave_only_ids:
+        for student in Student.objects.filter(id__in=leave_only_ids).select_related('admin'):
+            student_summary.append({
+                'name': str(student),
+                'total': 0,
+                'present': 0,
+                'absent': 0,
+                'percent': 0,
+                'leave': leave_by_student[student.id],
+                'flagged': False,
+            })
     # Worst attendance first, so chronic absences surface immediately.
     student_summary.sort(key=lambda r: r['percent'])
 
@@ -1106,8 +1157,8 @@ def _attendance_summary_data(request):
         'session_id': session_id,
         'start_date': start_date,
         'end_date': end_date,
-        'course_summary': with_percent(by_course, 'course'),
-        'daily_summary': with_percent(by_day, 'date'),
+        'course_summary': with_percent(by_course, 'course', leave_by_course),
+        'daily_summary': with_percent(by_day, 'date', leave_by_day, key_to_lookup=lambda d: d.isoformat()),
         'student_summary': student_summary,
     }
 
@@ -1132,18 +1183,18 @@ def report_attendance_summary(request):
 
 def report_attendance_summary_csv(request):
     data = _attendance_summary_data(request)
-    rows = [(row['course'], row['total'], row['present'], row['absent'], f"{row['percent']}%")
+    rows = [(row['course'], row['total'], row['present'], row['absent'], row['leave'], f"{row['percent']}%")
             for row in data['course_summary']]
     filename = f"attendance_summary_{data['start_date']}_to_{data['end_date']}.csv"
-    return csv_response(filename, ['Course', 'Total', 'Present', 'Absent', 'Attendance %'], rows)
+    return csv_response(filename, ['Course', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %'], rows)
 
 
 def report_attendance_by_student_csv(request):
     data = _attendance_summary_data(request)
-    rows = [(row['name'], row['total'], row['present'], row['absent'], f"{row['percent']}%",
+    rows = [(row['name'], row['total'], row['present'], row['absent'], row['leave'], f"{row['percent']}%",
              'Yes' if row['flagged'] else '') for row in data['student_summary']]
     filename = f"attendance_by_student_{data['start_date']}_to_{data['end_date']}.csv"
-    return csv_response(filename, ['Student', 'Total', 'Present', 'Absent', 'Attendance %', 'Below Threshold'], rows)
+    return csv_response(filename, ['Student', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %', 'Below Threshold'], rows)
 
 
 def report_student_attendance(request):
@@ -1167,11 +1218,17 @@ def report_student_attendance(request):
         counted = _exclude_approved_leave(reports)
         total = counted.count()
         present = counted.filter(status=True).count()
+        leave_qs = LeaveReportStudent.objects.filter(student=student, status=1)
+        if start_date:
+            leave_qs = leave_qs.filter(date__gte=start_date)
+        if end_date:
+            leave_qs = leave_qs.filter(date__lte=end_date)
         summary = {
             'student': student,
             'total': total,
             'present': present,
             'absent': total - present,
+            'leave': leave_qs.count(),
             'percent': round(present / total * 100, 1) if total else 0,
         }
         records = reports
