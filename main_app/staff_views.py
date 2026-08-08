@@ -13,7 +13,8 @@ from .models import (Attendance, AttendanceReport, CustomUser, FeedbackStaff,
                      LeaveReportStaff, LeaveReportStudent, NotificationStaff,
                      NotificationStudent, Session, Staff, Student,
                      StudentResult, Subject)
-from .utils import leave_decision_message, paginate, send_notification_email
+from .utils import (leave_decision_message, paginate, send_notification_email,
+                    teacher_course_ids)
 
 logger = logging.getLogger(__name__)
 
@@ -236,17 +237,17 @@ def staff_apply_leave(request):
 
 def staff_view_student_leave(request):
     staff = get_object_or_404(Staff, admin=request.user)
+    # A class can have more than one teacher, and a teacher can teach in
+    # more than one class - "their class" is every course they teach at
+    # least one subject in, not just Staff.course (a single "home" class).
+    # An empty set here correctly matches nothing via __in, unlike
+    # comparing a nullable FK directly.
+    taught_course_ids = teacher_course_ids(staff)
     if request.method != 'POST':
-        # staff.course=None (no class assigned yet) must show nothing -
-        # filtering by course=None would match every other courseless
-        # student's leave requests too, since both sides compare as NULL.
-        if staff.course is None:
-            allLeave = paginate(request, LeaveReportStudent.objects.none())
-        else:
-            allLeave = paginate(
-                request,
-                LeaveReportStudent.objects.filter(student__course=staff.course).order_by('-id')
-            )
+        allLeave = paginate(
+            request,
+            LeaveReportStudent.objects.filter(student__course_id__in=taught_course_ids).order_by('-id')
+        )
         context = {
             'allLeave': allLeave,
             'page_obj': allLeave,
@@ -257,12 +258,11 @@ def staff_view_student_leave(request):
         id = request.POST.get('id')
         status = request.POST.get('status')
         status = 1 if status == '1' else -1
-        if staff.course is None:
-            return HttpResponse(False)
         try:
-            # Restrict to leave requests from the staff member's own class,
-            # so a teacher can't approve/reject another class's leave by id.
-            leave = get_object_or_404(LeaveReportStudent, id=id, student__course=staff.course)
+            # Restrict to leave requests from a class the staff member
+            # actually teaches, so a teacher can't approve/reject another
+            # class's leave by id.
+            leave = get_object_or_404(LeaveReportStudent, id=id, student__course_id__in=taught_course_ids)
             if leave.status != 0:
                 # Already decided (e.g. by admin, or a duplicate submit) -
                 # don't overwrite the decision or send a second notification.

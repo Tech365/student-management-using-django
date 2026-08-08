@@ -727,16 +727,19 @@ class LeaveReportTests(TestCase):
 
 
 class StaffStudentLeaveApprovalTests(TestCase):
-    """A student's leave should be approved by their class teacher (the
-    Staff whose course matches the student's course), not only by the
-    HOD. Also guards against a teacher approving another class's leave
-    by guessing a LeaveReportStudent id."""
+    """A student's leave should be approved by one of their class's
+    teachers - every Staff who teaches at least one Subject in the
+    student's course, since a class can have more than one teacher and a
+    teacher can teach in more than one class - not only by the HOD. Also
+    guards against a teacher approving another class's leave by guessing
+    a LeaveReportStudent id."""
 
     def setUp(self):
         self.session = make_session()
         self.course_a = make_course("Leave Approval Course A")
         self.course_b = make_course("Leave Approval Course B")
         self.teacher = make_staff("leave_teacher@example.com", self.course_a)
+        Subject.objects.create(name="Course A Subject", staff=self.teacher, course=self.course_a)
         self.student_a = make_student("leave_student_a@example.com", self.course_a, self.session)
         self.student_b = make_student("leave_student_b@example.com", self.course_b, self.session)
         self.leave_a = LeaveReportStudent.objects.create(
@@ -780,37 +783,66 @@ class StaffStudentLeaveApprovalTests(TestCase):
         self.assertEqual(self.leave_a.status, 1)
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_second_teacher_of_same_class_can_also_approve(self):
+        # A class can have more than one teacher (e.g. a madrasa with two
+        # teachers per class, each covering different subjects).
+        second_teacher = make_staff("leave_teacher_2@example.com", self.course_b)
+        Subject.objects.create(name="Course A Subject 2", staff=second_teacher, course=self.course_a)
+        self.client.logout()
+        self.client.login(username="leave_teacher_2@example.com", password=PASSWORD)
+        response = self.client.post(reverse('staff_view_student_leave'), {
+            'id': self.leave_a.id, 'status': '1',
+        })
+        self.assertEqual(response.content.decode(), 'True')
+        self.leave_a.refresh_from_db()
+        self.assertEqual(self.leave_a.status, 1)
 
-class LeaveNullCourseScopingTests(TestCase):
-    """Staff.course and Student.course are nullable (a new account has no
-    course until an admin assigns one, e.g. via Django admin without ever
-    touching the app's own Edit Staff/Student screens). Filtering
-    LeaveReportStudent by `student__course=staff.course` when that's None
-    compiles to `course_id IS NULL`, which would match every OTHER
-    courseless student too - not "no results". Both sides of that must be
-    explicitly guarded rather than relying on the ORM filter."""
+    def test_teacher_of_multiple_classes_sees_leave_from_all_of_them(self):
+        # Same teacher can teach a subject in more than one class.
+        Subject.objects.create(name="Course B Subject", staff=self.teacher, course=self.course_b)
+        response = self.client.get(reverse('staff_view_student_leave'))
+        leaves = set(response.context['allLeave'])
+        self.assertEqual(leaves, {self.leave_a, self.leave_b})
+
+    def test_teacher_with_no_subjects_sees_and_approves_nothing(self):
+        no_subject_teacher = make_staff("leave_teacher_none@example.com", self.course_a)
+        self.client.logout()
+        self.client.login(username="leave_teacher_none@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_view_student_leave'))
+        self.assertEqual(list(response.context['allLeave']), [])
+        post_response = self.client.post(reverse('staff_view_student_leave'), {
+            'id': self.leave_a.id, 'status': '1',
+        })
+        self.assertEqual(post_response.content.decode(), 'False')
+
+
+class CourselessStudentLeaveScopingTests(TestCase):
+    """Class-teacher scoping is derived from Subject (staff, course), and
+    Subject.course is never null - so a student with course=None can
+    never match any teacher's taught courses. Covers the same fail-open
+    risk the old Staff.course-based scoping had (filtering by course=None
+    would otherwise match every other courseless record), now from the
+    student side; the teacher side is covered by
+    StaffStudentLeaveApprovalTests.test_teacher_with_no_subjects_sees_and_approves_nothing."""
 
     def setUp(self):
         self.session = make_session()
         self.course = make_course("Null Scoping Course")
-        # Courseless teacher and courseless student - NOT the same class,
-        # just both happen to have course=None.
-        self.courseless_teacher = make_staff("courseless_teacher@example.com", self.course)
-        self.courseless_teacher.course = None
-        self.courseless_teacher.save()
+        self.teacher = make_staff("courseless_scoping_teacher@example.com", self.course)
+        Subject.objects.create(name="Some Subject", staff=self.teacher, course=self.course)
         self.courseless_student = make_student("courseless_student@example.com", self.course, self.session)
         self.courseless_student.course = None
         self.courseless_student.save()
         self.leave = LeaveReportStudent.objects.create(
             student=self.courseless_student, date="2024-06-10", message="Sick", status=0)
 
-    def test_courseless_teacher_sees_no_leave_requests(self):
-        self.client.login(username="courseless_teacher@example.com", password=PASSWORD)
+    def test_teacher_cannot_see_courseless_students_leave(self):
+        self.client.login(username="courseless_scoping_teacher@example.com", password=PASSWORD)
         response = self.client.get(reverse('staff_view_student_leave'))
         self.assertEqual(list(response.context['allLeave']), [])
 
-    def test_courseless_teacher_cannot_approve_courseless_students_leave(self):
-        self.client.login(username="courseless_teacher@example.com", password=PASSWORD)
+    def test_teacher_cannot_approve_courseless_students_leave(self):
+        self.client.login(username="courseless_scoping_teacher@example.com", password=PASSWORD)
         response = self.client.post(reverse('staff_view_student_leave'), {
             'id': self.leave.id, 'status': '1',
         })
@@ -824,7 +856,7 @@ class LeaveNullCourseScopingTests(TestCase):
         self.client.post(reverse('student_apply_leave'), {
             'date': '2024-06-12', 'message': 'Feeling unwell',
         })
-        self.assertFalse(NotificationStaff.objects.filter(staff=self.courseless_teacher).exists())
+        self.assertFalse(NotificationStaff.objects.filter(staff=self.teacher).exists())
         self.assertEqual(len(mail.outbox), 0)
 
 
@@ -877,6 +909,7 @@ class LeaveNotificationTests(TestCase):
         self.course = make_course("Leave Notify Course")
         self.session = make_session()
         self.teacher = make_staff("leave_notify_teacher@example.com", self.course)
+        Subject.objects.create(name="Leave Notify Subject", staff=self.teacher, course=self.course)
         self.student = make_student("leave_notify_student@example.com", self.course, self.session)
         self.admin_user = make_admin("leave_notify_admin@example.com")
 

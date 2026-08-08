@@ -69,6 +69,18 @@ def leave_decision_message(leave_date, status):
     return f"Your leave application for {leave_date} was {verdict}."
 
 
+def teacher_course_ids(staff):
+    """IDs of every course `staff` teaches at least one subject in.
+
+    A teacher can teach subjects in more than one class, and a class can
+    have more than one teacher - this is the shared definition of "this
+    staff member is one of this class's teachers" used for student-leave
+    visibility/approval, rather than relying on Staff.course (which only
+    holds a single "home" class and can't represent that)."""
+    from .models import Subject
+    return set(Subject.objects.filter(staff=staff).values_list('course_id', flat=True))
+
+
 def log_action(request, action, target_model, target):
     """Record an admin mutation (create/update/delete/activate/deactivate)
     to the AuditLog. Imported lazily to avoid a circular import with
