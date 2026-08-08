@@ -20,11 +20,22 @@
 
 
                         <div class="form-group">
-                            <label>Subject</label>
-                            <select name="subject" class="form-control" id='subject'>
+                            <label>Course</label>
+                            <select name="course" class="form-control" id='course'>
                                 <option value="">----</option>
-                                {% for subject in subjects  %}
-                                <option value="{{subject.id}}">{{subject.name}}</option>
+                                {% for course in courses %}
+                                <option value="{{course.id}}">{{course.name}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Subject</label>
+                            <select name="subject" class="form-control" id='subject' disabled>
+                                <option value="">Select a course first</option>
+                            </select>
+                            <select id='all-subjects' style="display:none;">
+                                {% for subject in subjects %}
+                                <option value="{{subject.id}}" data-course="{{subject.course_id}}">{{subject.name}}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -79,11 +90,27 @@
 {% block custom_js %}
 <script>
     $(document).ready(function () {
+        $("#course").change(function () {
+            var course = $(this).val()
+            var subjectSelect = $("#subject")
+            if (course.length == 0) {
+                subjectSelect.html('<option value="">Select a course first</option>')
+                subjectSelect.prop("disabled", true)
+                return
+            }
+            subjectSelect.html('<option value="">----</option>')
+            $("#all-subjects option[data-course='" + course + "']").each(function () {
+                subjectSelect.append($("<option>").val($(this).val()).text($(this).text()))
+            })
+            subjectSelect.prop("disabled", false)
+        })
+
         $("#fetch_attendance").click(function(){
+            var course = $("#course").val()
             var subject = $("#subject").val()
             var session = $("#session").val()
-            if (session.length < 1 || subject.length < 1){
-                $("#error_attendance").html("Kindly Choose Both Subject and Session")
+            if (course.length < 1 || session.length < 1 || subject.length < 1){
+                $("#error_attendance").html("Kindly choose course, subject and session")
                 $("#attendance_block").hide()
                 $("#error_attendance").show()
                 return false

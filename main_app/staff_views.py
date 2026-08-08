@@ -9,10 +9,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
 from .forms import FeedbackStaffForm, LeaveReportStaffForm, StaffEditForm
-from .models import (Attendance, AttendanceReport, CustomUser, FeedbackStaff,
-                     LeaveReportStaff, LeaveReportStudent, NotificationStaff,
-                     NotificationStudent, Session, Staff, Student,
-                     StudentResult, Subject)
+from .models import (Attendance, AttendanceReport, Course, CustomUser,
+                     FeedbackStaff, LeaveReportStaff, LeaveReportStudent,
+                     NotificationStaff, NotificationStudent, Session, Staff,
+                     Student, StudentResult, Subject)
 from .utils import (leave_decision_message, paginate, send_notification_email,
                     teacher_course_ids)
 
@@ -46,10 +46,12 @@ def staff_home(request):
 
 def staff_take_attendance(request):
     staff = get_object_or_404(Staff, admin=request.user)
-    subjects = Subject.objects.filter(staff_id=staff)
+    subjects = Subject.objects.filter(staff_id=staff).select_related('course')
+    courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
     sessions = Session.objects.all()
     context = {
         'subjects': subjects,
+        'courses': courses,
         'sessions': sessions,
         'page_title': 'Take Attendance'
     }
@@ -135,9 +137,11 @@ def save_attendance(request):
 def staff_update_attendance(request):
     staff = get_object_or_404(Staff, admin=request.user)
     subjects = Subject.objects.filter(staff_id=staff)
+    courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
     sessions = Session.objects.all()
     context = {
         'subjects': subjects,
+        'courses': courses,
         'sessions': sessions,
         'page_title': 'Update Attendance'
     }
