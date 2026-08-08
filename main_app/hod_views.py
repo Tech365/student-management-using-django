@@ -1079,6 +1079,7 @@ def _approved_leave_counts(course_id, session_id, start_date, end_date):
 def _attendance_summary_data(request):
     course_id = request.GET.get('course') or ''
     session_id = request.GET.get('session') or ''
+    subject_id = request.GET.get('subject') or ''
     start_date = request.GET.get('start_date') or date.today().replace(day=1).isoformat()
     end_date = request.GET.get('end_date') or date.today().isoformat()
 
@@ -1088,6 +1089,8 @@ def _attendance_summary_data(request):
         reports = reports.filter(attendance__subject__course_id=course_id)
     if session_id:
         reports = reports.filter(attendance__session_id=session_id)
+    if subject_id:
+        reports = reports.filter(attendance__subject_id=subject_id)
     reports = _exclude_approved_leave(reports)
 
     leave_by_course, leave_by_day, leave_by_student = _approved_leave_counts(
@@ -1118,6 +1121,31 @@ def _attendance_summary_data(request):
         .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
         .order_by('date')
     )
+    by_subject_raw = (
+        reports.values(
+            subject=F('attendance__subject__name'),
+            course=F('attendance__subject__course__name'),
+        )
+        .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
+        .order_by('course', 'subject')
+    )
+    subject_summary = []
+    for row in by_subject_raw:
+        total = row['total']
+        present = row['present']
+        subject_summary.append({
+            'course': row['course'],
+            'subject': row['subject'],
+            'total': total,
+            'present': present,
+            'absent': total - present,
+            'percent': round(present / total * 100, 1) if total else 0,
+            # Leave isn't a subject-specific concept - an approved leave
+            # exempts a student from every subject that day - so this is
+            # the same course-level count shown in "By Course", attached
+            # to each of that course's subjects for context.
+            'leave': leave_by_course.get(row['course'], 0),
+        })
     by_student_raw = (
         reports.values('student_id', 'student__admin__first_name', 'student__admin__last_name')
         .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
@@ -1161,10 +1189,12 @@ def _attendance_summary_data(request):
     return {
         'course_id': course_id,
         'session_id': session_id,
+        'subject_id': subject_id,
         'start_date': start_date,
         'end_date': end_date,
         'course_summary': with_percent(by_course, 'course', leave_by_course),
         'daily_summary': with_percent(by_day, 'date', leave_by_day, key_to_lookup=lambda d: d.isoformat()),
+        'subject_summary': subject_summary,
         'student_summary': student_summary,
     }
 
@@ -1175,12 +1205,15 @@ def report_attendance_summary(request):
         'page_title': 'Attendance Summary Report',
         'courses': Course.objects.order_by('name'),
         'sessions': Session.objects.order_by('-start_year'),
+        'subjects': Subject.objects.select_related('course').order_by('course__name', 'name'),
         'selected_course': data['course_id'],
         'selected_session': data['session_id'],
+        'selected_subject': data['subject_id'],
         'start_date': data['start_date'],
         'end_date': data['end_date'],
         'course_summary': data['course_summary'],
         'daily_summary': data['daily_summary'],
+        'subject_summary': data['subject_summary'],
         'student_summary': data['student_summary'],
         'chronic_threshold': CHRONIC_ABSENCE_THRESHOLD,
     }
@@ -1193,6 +1226,14 @@ def report_attendance_summary_csv(request):
             for row in data['course_summary']]
     filename = f"attendance_summary_{data['start_date']}_to_{data['end_date']}.csv"
     return csv_response(filename, ['Course', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %'], rows)
+
+
+def report_attendance_by_subject_csv(request):
+    data = _attendance_summary_data(request)
+    rows = [(row['course'], row['subject'], row['total'], row['present'], row['absent'], row['leave'],
+             f"{row['percent']}%") for row in data['subject_summary']]
+    filename = f"attendance_by_subject_{data['start_date']}_to_{data['end_date']}.csv"
+    return csv_response(filename, ['Course', 'Subject', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %'], rows)
 
 
 def report_attendance_by_student_csv(request):
@@ -1210,6 +1251,7 @@ def report_student_attendance(request):
 
     records = []
     summary = None
+    subject_summary = []
     if student_id:
         student = get_object_or_404(Student, id=student_id)
         reports = AttendanceReport.objects.filter(student=student).select_related(
@@ -1239,6 +1281,22 @@ def report_student_attendance(request):
         }
         records = reports
 
+        by_subject_raw = (
+            counted.values(subject=F('attendance__subject__name'))
+            .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
+            .order_by('subject')
+        )
+        for row in by_subject_raw:
+            row_total = row['total']
+            row_present = row['present']
+            subject_summary.append({
+                'subject': row['subject'],
+                'total': row_total,
+                'present': row_present,
+                'absent': row_total - row_present,
+                'percent': round(row_present / row_total * 100, 1) if row_total else 0,
+            })
+
     context = {
         'page_title': 'Student Attendance History',
         'students': Student.objects.select_related('admin').order_by('admin__first_name'),
@@ -1247,6 +1305,7 @@ def report_student_attendance(request):
         'end_date': end_date,
         'records': records,
         'summary': summary,
+        'subject_summary': subject_summary,
     }
     return render(request, 'hod_template/report_student_attendance.html', context)
 

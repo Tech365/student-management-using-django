@@ -578,6 +578,37 @@ class AttendanceSummaryReportTests(TestCase):
         self.assertIn('Report Course', body)
         self.assertIn('50.0%', body)
 
+    def test_by_subject_breakdown_and_filter(self):
+        # A 2nd subject in the same course/date with a different
+        # attendance rate - the by-subject table must keep them separate
+        # instead of blending into one course-wide number.
+        second_subject = Subject.objects.create(name="Second Subject", staff=self.staff, course=self.course)
+        attendance2 = Attendance.objects.create(
+            session=self.session, subject=second_subject, date=datetime.date(2024, 6, 15))
+        AttendanceReport.objects.create(student=self.student, attendance=attendance2, status=False)
+
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        by_name = {r['subject']: r for r in response.context['subject_summary']}
+        self.assertEqual(by_name['Report Subject']['total'], 2)
+        self.assertEqual(by_name['Report Subject']['percent'], 50.0)
+        self.assertEqual(by_name['Second Subject']['total'], 1)
+        self.assertEqual(by_name['Second Subject']['percent'], 0.0)
+
+        # Filtering by subject should scope the course/day/student tables too.
+        filtered = self.client.get(reverse('report_attendance_summary'), {
+            'subject': second_subject.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        self.assertEqual(filtered.context['course_summary'][0]['total'], 1)
+
+        csv_response = self.client.get(reverse('report_attendance_by_subject_csv'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        body = csv_response.content.decode()
+        self.assertIn('Second Subject', body)
+        self.assertIn('Report Subject', body)
+
     def test_approved_leave_day_excluded_from_percentage(self):
         # A 3rd student, absent only because of an approved leave, should
         # not drag the percentage down or count toward the total.
@@ -666,6 +697,19 @@ class StudentAttendanceReportTests(TestCase):
     def test_csv_requires_student(self):
         response = self.client.get(reverse('report_student_attendance_csv'))
         self.assertEqual(response.status_code, 400)
+
+    def test_by_subject_breakdown_for_student(self):
+        second_subject = Subject.objects.create(name="Second Subject", staff=self.staff, course=self.course)
+        attendance2 = Attendance.objects.create(
+            session=self.session, subject=second_subject, date=datetime.date(2024, 6, 16))
+        AttendanceReport.objects.create(student=self.student, attendance=attendance2, status=False)
+
+        response = self.client.get(reverse('report_student_attendance'), {'student': self.student.id})
+        by_name = {r['subject']: r for r in response.context['subject_summary']}
+        self.assertEqual(by_name['Student Report Subject']['total'], 1)
+        self.assertEqual(by_name['Student Report Subject']['percent'], 100.0)
+        self.assertEqual(by_name['Second Subject']['total'], 1)
+        self.assertEqual(by_name['Second Subject']['percent'], 0.0)
 
     def test_approved_leave_excluded_from_summary_but_visible_in_history(self):
         leave_attendance = Attendance.objects.create(

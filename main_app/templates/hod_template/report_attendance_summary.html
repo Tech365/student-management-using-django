@@ -32,6 +32,15 @@
                                 </select>
                             </div>
                             <div class="form-group mr-2">
+                                <label class="mr-2">Subject</label>
+                                <select name="subject" class="form-control">
+                                    <option value="">All Subjects</option>
+                                    {% for subject in subjects %}
+                                    <option value="{{ subject.id }}" {% if selected_subject == subject.id|stringformat:"s" %}selected{% endif %}>{{ subject.course.name }} - {{ subject.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group mr-2">
                                 <label class="mr-2">From</label>
                                 <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
                             </div>
@@ -41,7 +50,7 @@
                             </div>
                             <button type="submit" class="btn btn-primary mr-2">Filter</button>
                             <a class="btn btn-outline-secondary"
-                               href="{% url 'report_attendance_summary_csv' %}?course={{ selected_course }}&session={{ selected_session }}&start_date={{ start_date }}&end_date={{ end_date }}">
+                               href="{% url 'report_attendance_summary_csv' %}?course={{ selected_course }}&session={{ selected_session }}&subject={{ selected_subject }}&start_date={{ start_date }}&end_date={{ end_date }}">
                                 <i class="fas fa-download"></i> Export CSV
                             </a>
                         </form>
@@ -83,6 +92,42 @@
                 </div>
 
                 <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">By Subject</h3>
+                        <div class="card-tools">
+                            <a class="btn btn-outline-secondary btn-sm"
+                               href="{% url 'report_attendance_by_subject_csv' %}?course={{ selected_course }}&session={{ selected_session }}&subject={{ selected_subject }}&start_date={{ start_date }}&end_date={{ end_date }}">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Course</th><th>Subject</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in subject_summary %}
+                                    <tr>
+                                        <td>{{ row.course }}</td>
+                                        <td>{{ row.subject }}</td>
+                                        <td>{{ row.total }}</td>
+                                        <td>{{ row.present }}</td>
+                                        <td>{{ row.absent }}</td>
+                                        <td>{{ row.leave }}</td>
+                                        <td>{{ row.percent }}%</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="7" class="text-muted">No attendance recorded for this range.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
                     <div class="card-header"><h3 class="card-title">By Day</h3></div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -114,7 +159,7 @@
                         <h3 class="card-title">By Student &mdash; worst attendance first</h3>
                         <div class="card-tools">
                             <a class="btn btn-outline-secondary btn-sm"
-                               href="{% url 'report_attendance_by_student_csv' %}?course={{ selected_course }}&session={{ selected_session }}&start_date={{ start_date }}&end_date={{ end_date }}">
+                               href="{% url 'report_attendance_by_student_csv' %}?course={{ selected_course }}&session={{ selected_session }}&subject={{ selected_subject }}&start_date={{ start_date }}&end_date={{ end_date }}">
                                 <i class="fas fa-download"></i> Export CSV
                             </a>
                         </div>

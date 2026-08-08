@@ -152,6 +152,8 @@ urlpatterns = [
          name='report_attendance_summary_csv'),
     path("reports/attendance/by-student/csv/", hod_views.report_attendance_by_student_csv,
          name='report_attendance_by_student_csv'),
+    path("reports/attendance/by-subject/csv/", hod_views.report_attendance_by_subject_csv,
+         name='report_attendance_by_subject_csv'),
     path("reports/student-attendance/", hod_views.report_student_attendance,
          name='report_student_attendance'),
     path("reports/student-attendance/csv/", hod_views.report_student_attendance_csv,

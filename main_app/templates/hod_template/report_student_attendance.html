@@ -91,6 +91,32 @@
                 </div>
 
                 <div class="card">
+                    <div class="card-header"><h3 class="card-title">{{ summary.student }} &mdash; By Subject</h3></div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Subject</th><th>Total</th><th>Present</th><th>Absent</th><th>Attendance %</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in subject_summary %}
+                                    <tr>
+                                        <td>{{ row.subject }}</td>
+                                        <td>{{ row.total }}</td>
+                                        <td>{{ row.present }}</td>
+                                        <td>{{ row.absent }}</td>
+                                        <td>{{ row.percent }}%</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="5" class="text-muted">No attendance recorded for this range.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
                     <div class="card-header"><h3 class="card-title">{{ summary.student }} &mdash; Attendance History</h3></div>
                     <div class="card-body">
                         <div class="table-responsive">
