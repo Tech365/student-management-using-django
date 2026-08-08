@@ -14,7 +14,7 @@ from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      NotificationStaff, NotificationStudent, Session, Staff,
                      Student, StudentResult, Subject)
 from .utils import (leave_decision_message, paginate, send_notification_email,
-                    teacher_course_ids)
+                    session_course_ids_map, teacher_course_ids)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,9 @@ def staff_take_attendance(request):
     subjects = Subject.objects.filter(staff_id=staff).select_related('course')
     courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
     sessions = Session.objects.all()
+    session_courses = session_course_ids_map()
+    for session in sessions:
+        session.course_ids_str = ' '.join(str(c) for c in session_courses.get(session.id, []))
     context = {
         'subjects': subjects,
         'courses': courses,
@@ -145,6 +148,9 @@ def staff_update_attendance(request):
     subjects = Subject.objects.filter(staff_id=staff)
     courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
     sessions = Session.objects.all()
+    session_courses = session_course_ids_map()
+    for session in sessions:
+        session.course_ids_str = ' '.join(str(c) for c in session_courses.get(session.id, []))
     context = {
         'subjects': subjects,
         'courses': courses,

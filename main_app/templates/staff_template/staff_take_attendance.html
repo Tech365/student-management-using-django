@@ -44,10 +44,12 @@
 
                         <div class="form-group">
                             <label>Session Year</label>
-                            <select name="session" id='session' class="form-control">
-                                <option value="">----</option>
-                                {% for session in sessions  %}
-                                <option value="{{session.id}}">{{session}} </option>
+                            <select name="session" id='session' class="form-control" disabled>
+                                <option value="">Select a class first</option>
+                            </select>
+                            <select id='all-sessions' style="display:none;">
+                                {% for session in sessions %}
+                                <option value="{{session.id}}" data-courses="{{session.course_ids_str}}">{{session}}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -83,9 +85,12 @@
         $("#course").change(function () {
             var course = $(this).val()
             var subjectSelect = $("#subject")
+            var sessionSelect = $("#session")
             if (course.length == 0) {
                 subjectSelect.html('<option value="">Select a class first</option>')
                 subjectSelect.prop("disabled", true)
+                sessionSelect.html('<option value="">Select a class first</option>')
+                sessionSelect.prop("disabled", true)
                 return
             }
             subjectSelect.html('<option value="">----</option>')
@@ -93,6 +98,15 @@
                 subjectSelect.append($("<option>").val($(this).val()).text($(this).text()))
             })
             subjectSelect.prop("disabled", false)
+
+            sessionSelect.html('<option value="">----</option>')
+            $("#all-sessions option").each(function () {
+                var courseIds = ($(this).data("courses") + "").split(" ")
+                if (courseIds.indexOf(course) !== -1) {
+                    sessionSelect.append($("<option>").val($(this).val()).text($(this).text()))
+                }
+            })
+            sessionSelect.prop("disabled", false)
         })
 
         $("#fetch_student").click(function () {

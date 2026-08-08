@@ -22,7 +22,7 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      StudentResult, Subject)
 from .utils import (csv_response, leave_decision_message, log_action,
                     paginate, read_csv_rows, send_notification_email,
-                    staff_class_names_map)
+                    session_course_ids_map, staff_class_names_map)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
@@ -772,9 +772,14 @@ def view_student_leave(request):
 
 
 def admin_view_attendance(request):
-    subjects = Subject.objects.all()
-    sessions = Session.objects.all()
+    courses = Course.objects.order_by('name')
+    subjects = Subject.objects.select_related('course').order_by('course__name', 'name')
+    sessions = Session.objects.order_by('-start_year')
+    session_courses = session_course_ids_map()
+    for session in sessions:
+        session.course_ids_str = ' '.join(str(c) for c in session_courses.get(session.id, []))
     context = {
+        'courses': courses,
         'subjects': subjects,
         'sessions': sessions,
         'page_title': 'View Attendance'
@@ -1202,10 +1207,14 @@ def _attendance_summary_data(request):
 
 def report_attendance_summary(request):
     data = _attendance_summary_data(request)
+    sessions = Session.objects.order_by('-start_year')
+    session_courses = session_course_ids_map()
+    for session in sessions:
+        session.course_ids_str = ' '.join(str(c) for c in session_courses.get(session.id, []))
     context = {
         'page_title': 'Attendance Summary Report',
         'courses': Course.objects.order_by('name'),
-        'sessions': Session.objects.order_by('-start_year'),
+        'sessions': sessions,
         'subjects': Subject.objects.select_related('course').order_by('course__name', 'name'),
         'selected_course': data['course_id'],
         'selected_session': data['session_id'],

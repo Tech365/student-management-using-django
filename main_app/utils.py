@@ -93,6 +93,20 @@ def staff_class_names_map(staff_ids):
     return {staff_id: ', '.join(sorted(names)) for staff_id, names in by_staff.items()}
 
 
+def session_course_ids_map():
+    """Map of Session.id -> set of Course ids with at least one Student
+    enrolled in that session. A class isn't tied to one session (it
+    spans years), but this lets a "Class" filter narrow the Session
+    dropdown down to years that actually had students in that class,
+    instead of listing every session the school has ever had."""
+    from .models import Student
+    by_session = {}
+    pairs = Student.objects.exclude(session=None).exclude(course=None).values_list('session_id', 'course_id')
+    for session_id, course_id in pairs:
+        by_session.setdefault(session_id, set()).add(course_id)
+    return by_session
+
+
 def log_action(request, action, target_model, target):
     """Record an admin mutation (create/update/delete/activate/deactivate)
     to the AuditLog. Imported lazily to avoid a circular import with

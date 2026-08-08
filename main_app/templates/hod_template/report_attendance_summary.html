@@ -15,7 +15,7 @@
                         <form method="GET" class="form-inline">
                             <div class="form-group mr-2">
                                 <label class="mr-2">Class</label>
-                                <select name="course" class="form-control">
+                                <select name="course" class="form-control" id="course">
                                     <option value="">All Classes</option>
                                     {% for course in courses %}
                                     <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
@@ -24,19 +24,19 @@
                             </div>
                             <div class="form-group mr-2">
                                 <label class="mr-2">Session</label>
-                                <select name="session" class="form-control">
+                                <select name="session" class="form-control" id="session">
                                     <option value="">All Sessions</option>
                                     {% for session in sessions %}
-                                    <option value="{{ session.id }}" {% if selected_session == session.id|stringformat:"s" %}selected{% endif %}>{{ session }}</option>
+                                    <option value="{{ session.id }}" data-courses="{{ session.course_ids_str }}" {% if selected_session == session.id|stringformat:"s" %}selected{% endif %}>{{ session }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="form-group mr-2">
                                 <label class="mr-2">Subject</label>
-                                <select name="subject" class="form-control">
+                                <select name="subject" class="form-control" id="subject">
                                     <option value="">All Subjects</option>
                                     {% for subject in subjects %}
-                                    <option value="{{ subject.id }}" {% if selected_subject == subject.id|stringformat:"s" %}selected{% endif %}>{{ subject.course.name }} - {{ subject.name }}</option>
+                                    <option value="{{ subject.id }}" data-course="{{ subject.course_id }}" {% if selected_subject == subject.id|stringformat:"s" %}selected{% endif %}>{{ subject.course.name }} - {{ subject.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -201,6 +201,39 @@
 {% endblock content %}
 {% block custom_js %}
 <script>
+    $(document).ready(function () {
+        // Snapshot the full, server-rendered option lists once, so
+        // picking "All Classes" again can restore them.
+        var allSubjectOptions = $("#subject option").clone()
+        var allSessionOptions = $("#session option").clone()
+
+        $("#course").change(function () {
+            var course = $(this).val()
+            var subjectSelect = $("#subject")
+            var sessionSelect = $("#session")
+            var currentSubject = subjectSelect.val()
+            var currentSession = sessionSelect.val()
+
+            var subjectOptions = course.length == 0 ? allSubjectOptions :
+                allSubjectOptions.filter(function () { return $(this).val() === "" || $(this).data("course") == course })
+            subjectSelect.html(subjectOptions.clone())
+            if (subjectSelect.find("option[value='" + currentSubject + "']").length) {
+                subjectSelect.val(currentSubject)
+            }
+
+            var sessionOptions = course.length == 0 ? allSessionOptions :
+                allSessionOptions.filter(function () {
+                    if ($(this).val() === "") return true
+                    var courseIds = ($(this).data("courses") + "").split(" ")
+                    return courseIds.indexOf(course) !== -1
+                })
+            sessionSelect.html(sessionOptions.clone())
+            if (sessionSelect.find("option[value='" + currentSession + "']").length) {
+                sessionSelect.val(currentSession)
+            }
+        })
+    })
+
     (function () {
         var days = [
             {% for row in daily_summary %}

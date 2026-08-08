@@ -15,7 +15,7 @@
                         <form method="GET" class="form-inline">
                             <div class="form-group mr-2">
                                 <label class="mr-2">Class</label>
-                                <select name="course" class="form-control">
+                                <select name="course" class="form-control" id="course">
                                     <option value="">All Classes</option>
                                     {% for course in courses %}
                                     <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
@@ -24,10 +24,10 @@
                             </div>
                             <div class="form-group mr-2">
                                 <label class="mr-2">Subject</label>
-                                <select name="subject" class="form-control">
+                                <select name="subject" class="form-control" id="subject">
                                     <option value="">All Subjects</option>
                                     {% for subject in subjects %}
-                                    <option value="{{ subject.id }}" {% if selected_subject == subject.id|stringformat:"s" %}selected{% endif %}>{{ subject.course.name }} &mdash; {{ subject.name }}</option>
+                                    <option value="{{ subject.id }}" data-course="{{ subject.course_id }}" {% if selected_subject == subject.id|stringformat:"s" %}selected{% endif %}>{{ subject.course.name }} &mdash; {{ subject.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -101,3 +101,23 @@
     </div>
 </section>
 {% endblock content %}
+{% block custom_js %}
+<script>
+    $(document).ready(function () {
+        var allSubjectOptions = $("#subject option").clone()
+
+        $("#course").change(function () {
+            var course = $(this).val()
+            var subjectSelect = $("#subject")
+            var currentSubject = subjectSelect.val()
+
+            var subjectOptions = course.length == 0 ? allSubjectOptions :
+                allSubjectOptions.filter(function () { return $(this).val() === "" || $(this).data("course") == course })
+            subjectSelect.html(subjectOptions.clone())
+            if (subjectSelect.find("option[value='" + currentSubject + "']").length) {
+                subjectSelect.val(currentSubject)
+            }
+        })
+    })
+</script>
+{% endblock custom_js %}
