@@ -21,9 +21,14 @@ logger = logging.getLogger(__name__)
 
 def staff_home(request):
     staff = get_object_or_404(Staff, admin=request.user)
-    total_students = Student.objects.filter(course=staff.course).count()
+    subjects = Subject.objects.filter(staff=staff).select_related('course')
+    # A teacher's classes are every course they teach at least one
+    # subject in - not a single "home class" - so list them all rather
+    # than picking one.
+    class_names = sorted({subject.course.name for subject in subjects})
+    taught_course_ids = teacher_course_ids(staff)
+    total_students = Student.objects.filter(course_id__in=taught_course_ids).count()
     total_leave = LeaveReportStaff.objects.filter(staff=staff).count()
-    subjects = Subject.objects.filter(staff=staff)
     total_subject = subjects.count()
     total_attendance = Attendance.objects.filter(subject__in=subjects).count()
     attendance_counts = dict(
@@ -32,8 +37,9 @@ def staff_home(request):
     )
     subject_list = [subject.name for subject in subjects]
     attendance_list = [attendance_counts.get(subject.id, 0) for subject in subjects]
+    class_label = ', '.join(class_names) if class_names else 'No class assigned'
     context = {
-        'page_title': 'Staff Panel - ' + str(staff.admin.last_name) + ' (' + str(staff.course) + ')',
+        'page_title': 'Staff Panel - ' + str(staff.admin.last_name) + ' (' + class_label + ')',
         'total_students': total_students,
         'total_attendance': total_attendance,
         'total_leave': total_leave,

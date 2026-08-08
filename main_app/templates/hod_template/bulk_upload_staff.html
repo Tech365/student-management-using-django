@@ -16,10 +16,12 @@
                         <div class="card-body">
                             <p>
                                 Upload a CSV file with columns <code>first_name</code>, <code>last_name</code>,
-                                <code>email</code>, <code>gender</code> (M or F), <code>address</code> and
-                                <code>class</code> (must match an existing class name).
+                                <code>email</code>, <code>gender</code> (M or F) and <code>address</code>.
                                 A random password is generated for each new account and shown in the results below —
                                 make sure to save it, it won't be shown again.
+                                Assign the new staff member to their classes afterwards via
+                                <a href="{% url 'add_subject' %}">Add Subject</a> — a teacher's classes are
+                                determined by which subjects they're assigned to teach.
                                 <a href="{% static 'samples/staff_template.csv' %}" download>Download a sample CSV</a>.
                             </p>
                             {{ form.csv_file.errors }}

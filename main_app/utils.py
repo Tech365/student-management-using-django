@@ -81,6 +81,18 @@ def teacher_course_ids(staff):
     return set(Subject.objects.filter(staff=staff).values_list('course_id', flat=True))
 
 
+def staff_class_names_map(staff_ids):
+    """Map of Staff.id -> comma-joined class names, derived from Subject
+    assignments (a teacher's classes aren't a single field on Staff -
+    see teacher_course_ids). Staff with no subjects assigned yet are
+    simply absent from the returned dict; look up with .get(id, '—')."""
+    from .models import Subject
+    by_staff = {}
+    for subject in Subject.objects.filter(staff_id__in=staff_ids).select_related('course'):
+        by_staff.setdefault(subject.staff_id, set()).add(subject.course.name)
+    return {staff_id: ', '.join(sorted(names)) for staff_id, names in by_staff.items()}
+
+
 def log_action(request, action, target_model, target):
     """Record an admin mutation (create/update/delete/activate/deactivate)
     to the AuditLog. Imported lazily to avoid a circular import with

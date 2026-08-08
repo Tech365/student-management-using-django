@@ -76,14 +76,17 @@ class AdminForm(CustomUserForm):
 
 
 class StaffForm(CustomUserForm):
+    """No 'course'/class field: which classes a staff member belongs to
+    is entirely determined by which Subjects they're assigned to teach
+    (a teacher can teach subjects in more than one class), not by a
+    single field on Staff."""
+
     def __init__(self, *args, **kwargs):
         super(StaffForm, self).__init__(*args, **kwargs)
 
     class Meta(CustomUserForm.Meta):
         model = Staff
-        fields = CustomUserForm.Meta.fields + \
-            ['course' ]
-        labels = {'course': 'Class'}
+        fields = CustomUserForm.Meta.fields
 
 
 class CourseForm(FormSettings):

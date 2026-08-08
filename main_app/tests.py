@@ -9,6 +9,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 from PIL import Image
 
+from .forms import StaffForm
 from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      CustomUser, LeaveReportStaff, LeaveReportStudent,
                      NotificationStaff, NotificationStudent, Session, Staff,
@@ -83,6 +84,54 @@ class UserProfileSignalTests(TestCase):
             first_name="Signal", last_name="Student",
         )
         self.assertTrue(Student.objects.filter(admin=user).exists())
+
+
+class StaffMultipleClassesTests(TestCase):
+    """A teacher's classes come entirely from which Subjects they're
+    assigned to teach - a teacher can teach subjects in more than one
+    class. Staff.course (a single field) is no longer part of the
+    Add/Edit Staff form or shown anywhere; class membership is always
+    derived from Subject assignments."""
+
+    def setUp(self):
+        self.session = make_session()
+        self.course_a = make_course("Multi Class A")
+        self.course_b = make_course("Multi Class B")
+        self.teacher = make_staff("multi_class_teacher@example.com", self.course_a)
+        Subject.objects.create(name="Subject A", staff=self.teacher, course=self.course_a)
+        Subject.objects.create(name="Subject B", staff=self.teacher, course=self.course_b)
+        self.student_a = make_student("multi_class_student_a@example.com", self.course_a, self.session)
+        self.student_b = make_student("multi_class_student_b@example.com", self.course_b, self.session)
+
+    def test_staff_form_has_no_class_field(self):
+        self.assertNotIn('course', StaffForm().fields)
+
+    def test_staff_home_counts_students_across_all_classes(self):
+        self.client.login(username="multi_class_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_home'))
+        self.assertEqual(response.context['total_students'], 2)
+        self.assertIn('Multi Class A', response.context['page_title'])
+        self.assertIn('Multi Class B', response.context['page_title'])
+
+    def test_manage_staff_shows_all_classes(self):
+        make_admin("multi_class_admin@example.com")
+        self.client.login(username="multi_class_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('manage_staff'))
+        by_email = {u.email: u for u in response.context['allStaff']}
+        self.assertEqual(by_email["multi_class_teacher@example.com"].class_names,
+                          "Multi Class A, Multi Class B")
+
+    def test_add_staff_works_without_a_class(self):
+        make_admin("multi_class_admin2@example.com")
+        self.client.login(username="multi_class_admin2@example.com", password=PASSWORD)
+        response = self.client.post(reverse('add_staff'), {
+            'first_name': 'No', 'last_name': 'Class', 'email': 'no_class_teacher@example.com',
+            'gender': 'M', 'password': PASSWORD, 'address': '1 Test St',
+            'profile_pic': make_image_file(),
+        })
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email='no_class_teacher@example.com')
+        self.assertIsNone(user.staff.course)
 
 
 class RoleRedirectTests(TestCase):
@@ -408,40 +457,43 @@ class BulkUploadSubjectTests(TestCase):
 
 
 class BulkUploadStaffTests(TestCase):
+    """A staff member's classes come from Subject assignments (see
+    ManageStaffClassNamesTests), not from the bulk-upload CSV - there's
+    no class/course column here at all."""
+
     def setUp(self):
         make_admin("bulk_admin_staff@example.com")
         self.client.login(username="bulk_admin_staff@example.com", password=PASSWORD)
         self.course = make_course("Staff Bulk Course")
 
     def test_creates_staff_account_with_working_generated_password(self):
-        content = ("first_name,last_name,email,gender,address,class\n"
-                   "New,Teacher,new_teacher@example.com,F,1 Test St,Staff Bulk Course\n")
+        content = ("first_name,last_name,email,gender,address\n"
+                   "New,Teacher,new_teacher@example.com,F,1 Test St\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         result = response.context['results'][0]
         self.assertEqual(result['status'], 'success')
         user = CustomUser.objects.get(email="new_teacher@example.com")
         self.assertEqual(user.user_type, '2')
-        self.assertEqual(user.staff.course, self.course)
         generated_password = result['message'].split(': ')[-1]
         self.assertTrue(user.check_password(generated_password))
 
     def test_invalid_gender_reported_as_error(self):
-        content = ("first_name,last_name,email,gender,address,class\n"
-                   "Bad,Gender,bad_gender@example.com,X,addr,Staff Bulk Course\n")
+        content = ("first_name,last_name,email,gender,address\n"
+                   "Bad,Gender,bad_gender@example.com,X,addr\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
         self.assertFalse(CustomUser.objects.filter(email="bad_gender@example.com").exists())
 
-    def test_unknown_course_reported_as_error(self):
-        content = ("first_name,last_name,email,gender,address,class\n"
-                   "No,Course,no_course@example.com,M,addr,Nonexistent Course\n")
+    def test_missing_field_reported_as_error(self):
+        content = ("first_name,last_name,email,gender,address\n"
+                   ",Gender,no_first_name@example.com,M,addr\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
 
     def test_duplicate_email_skipped(self):
         make_staff("dup_staff@example.com", self.course)
-        content = ("first_name,last_name,email,gender,address,class\n"
-                   "Dup,Staff,dup_staff@example.com,M,addr,Staff Bulk Course\n")
+        content = ("first_name,last_name,email,gender,address\n"
+                   "Dup,Staff,dup_staff@example.com,M,addr\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'skipped')
 

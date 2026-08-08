@@ -21,7 +21,8 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      NotificationStudent, Session, Staff, Student,
                      StudentResult, Subject)
 from .utils import (csv_response, leave_decision_message, log_action,
-                    paginate, read_csv_rows, send_notification_email)
+                    paginate, read_csv_rows, send_notification_email,
+                    staff_class_names_map)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
@@ -103,7 +104,6 @@ def add_staff(request):
             email = form.cleaned_data.get('email')
             gender = form.cleaned_data.get('gender')
             password = form.cleaned_data.get('password')
-            course = form.cleaned_data.get('course')
             passport = request.FILES.get('profile_pic')
             fs = FileSystemStorage()
             filename = fs.save(passport.name, passport)
@@ -113,7 +113,6 @@ def add_staff(request):
                     email=email, password=password, user_type=2, first_name=first_name, last_name=last_name, profile_pic=passport_url)
                 user.gender = gender
                 user.address = address
-                user.staff.course = course
                 user.save()
                 log_action(request, 'created', 'Staff', user)
                 messages.success(request, "Successfully Added")
@@ -294,10 +293,9 @@ def bulk_upload_staff(request):
                 email = (row.get('email') or '').lower()
                 gender = (row.get('gender') or '').upper()
                 address = row.get('address') or ''
-                course_name = row.get('class') or ''
 
                 missing = [f for f, v in [('first_name', first_name), ('last_name', last_name),
-                                           ('email', email), ('gender', gender), ('class', course_name)] if not v]
+                                           ('email', email), ('gender', gender)] if not v]
                 if missing:
                     results.append({'row': row_number, 'status': 'error', 'message': f"Missing {', '.join(missing)}"})
                     continue
@@ -306,10 +304,6 @@ def bulk_upload_staff(request):
                     continue
                 if CustomUser.objects.filter(email=email).exists():
                     results.append({'row': row_number, 'status': 'skipped', 'message': f'"{email}" already registered'})
-                    continue
-                course = Course.objects.filter(name__iexact=course_name).first()
-                if course is None:
-                    results.append({'row': row_number, 'status': 'error', 'message': f'No class named "{course_name}"'})
                     continue
                 try:
                     password = get_random_string(10)
@@ -321,8 +315,6 @@ def bulk_upload_staff(request):
                     user.gender = gender
                     user.address = address
                     user.save()
-                    user.staff.course = course
-                    user.staff.save()
                     results.append({'row': row_number, 'status': 'success',
                                      'message': f'Created — temporary password: {password}'})
                 except Exception as e:
@@ -413,7 +405,10 @@ def manage_admin(request):
 
 
 def manage_staff(request):
-    allStaff = paginate(request, CustomUser.objects.filter(user_type=2).select_related('staff', 'staff__course').order_by('id'))
+    allStaff = paginate(request, CustomUser.objects.filter(user_type=2).select_related('staff').order_by('id'))
+    classes_by_staff = staff_class_names_map([user.staff.id for user in allStaff])
+    for user in allStaff:
+        user.class_names = classes_by_staff.get(user.staff.id, '—')
     context = {
         'allStaff': allStaff,
         'page_obj': allStaff,
@@ -468,7 +463,6 @@ def edit_staff(request, staff_id):
             email = form.cleaned_data.get('email')
             gender = form.cleaned_data.get('gender')
             password = form.cleaned_data.get('password') or None
-            course = form.cleaned_data.get('course')
             passport = request.FILES.get('profile_pic') or None
             try:
                 user = CustomUser.objects.get(id=staff.admin.id)
@@ -484,9 +478,7 @@ def edit_staff(request, staff_id):
                 user.last_name = last_name
                 user.gender = gender
                 user.address = address
-                staff.course = course
                 user.save()
-                staff.save()
                 log_action(request, 'updated', 'Staff', user)
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_staff', args=[staff_id]))
@@ -689,7 +681,10 @@ def student_feedback_message(request):
 
 def staff_feedback_message(request):
     if request.method != 'POST':
-        feedbacks = paginate(request, FeedbackStaff.objects.order_by('id'))
+        feedbacks = paginate(request, FeedbackStaff.objects.select_related('staff').order_by('id'))
+        classes_by_staff = staff_class_names_map([f.staff_id for f in feedbacks])
+        for feedback in feedbacks:
+            feedback.class_names = classes_by_staff.get(feedback.staff_id, '—')
         context = {
             'feedbacks': feedbacks,
             'page_obj': feedbacks,
@@ -711,7 +706,10 @@ def staff_feedback_message(request):
 
 def view_staff_leave(request):
     if request.method != 'POST':
-        allLeave = paginate(request, LeaveReportStaff.objects.order_by('id'))
+        allLeave = paginate(request, LeaveReportStaff.objects.select_related('staff').order_by('id'))
+        classes_by_staff = staff_class_names_map([leave.staff_id for leave in allLeave])
+        for leave in allLeave:
+            leave.class_names = classes_by_staff.get(leave.staff_id, '—')
         context = {
             'allLeave': allLeave,
             'page_obj': allLeave,
@@ -854,7 +852,10 @@ def admin_view_profile(request):
 
 
 def admin_notify_staff(request):
-    staff = CustomUser.objects.filter(user_type=2)
+    staff = CustomUser.objects.filter(user_type=2).select_related('staff')
+    classes_by_staff = staff_class_names_map([user.staff.id for user in staff])
+    for user in staff:
+        user.class_names = classes_by_staff.get(user.staff.id, '—')
     context = {
         'page_title': "Send Notifications To Staff",
         'allStaff': staff
