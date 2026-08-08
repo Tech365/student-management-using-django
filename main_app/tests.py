@@ -391,18 +391,18 @@ class BulkUploadSubjectTests(TestCase):
         self.staff = make_staff("bulk_teacher@example.com", self.course)
 
     def test_creates_subject_with_valid_references(self):
-        content = "name,staff_email,course\nQuran,bulk_teacher@example.com,Bulk Subject Course\n"
+        content = "name,staff_email,class\nQuran,bulk_teacher@example.com,Bulk Subject Course\n"
         self.client.post(reverse('bulk_upload_subjects'), {'csv_file': csv_file(content)})
         self.assertTrue(Subject.objects.filter(name="Quran", course=self.course, staff=self.staff).exists())
 
     def test_unknown_staff_email_reported_as_error(self):
-        content = "name,staff_email,course\nQuran,missing@example.com,Bulk Subject Course\n"
+        content = "name,staff_email,class\nQuran,missing@example.com,Bulk Subject Course\n"
         response = self.client.post(reverse('bulk_upload_subjects'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
         self.assertFalse(Subject.objects.filter(name="Quran").exists())
 
     def test_unknown_course_reported_as_error(self):
-        content = "name,staff_email,course\nQuran,bulk_teacher@example.com,No Such Course\n"
+        content = "name,staff_email,class\nQuran,bulk_teacher@example.com,No Such Course\n"
         response = self.client.post(reverse('bulk_upload_subjects'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
 
@@ -414,7 +414,7 @@ class BulkUploadStaffTests(TestCase):
         self.course = make_course("Staff Bulk Course")
 
     def test_creates_staff_account_with_working_generated_password(self):
-        content = ("first_name,last_name,email,gender,address,course\n"
+        content = ("first_name,last_name,email,gender,address,class\n"
                    "New,Teacher,new_teacher@example.com,F,1 Test St,Staff Bulk Course\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         result = response.context['results'][0]
@@ -426,21 +426,21 @@ class BulkUploadStaffTests(TestCase):
         self.assertTrue(user.check_password(generated_password))
 
     def test_invalid_gender_reported_as_error(self):
-        content = ("first_name,last_name,email,gender,address,course\n"
+        content = ("first_name,last_name,email,gender,address,class\n"
                    "Bad,Gender,bad_gender@example.com,X,addr,Staff Bulk Course\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
         self.assertFalse(CustomUser.objects.filter(email="bad_gender@example.com").exists())
 
     def test_unknown_course_reported_as_error(self):
-        content = ("first_name,last_name,email,gender,address,course\n"
+        content = ("first_name,last_name,email,gender,address,class\n"
                    "No,Course,no_course@example.com,M,addr,Nonexistent Course\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
 
     def test_duplicate_email_skipped(self):
         make_staff("dup_staff@example.com", self.course)
-        content = ("first_name,last_name,email,gender,address,course\n"
+        content = ("first_name,last_name,email,gender,address,class\n"
                    "Dup,Staff,dup_staff@example.com,M,addr,Staff Bulk Course\n")
         response = self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'skipped')
@@ -454,7 +454,7 @@ class BulkUploadStudentTests(TestCase):
         self.session = make_session()
 
     def test_creates_student_account(self):
-        content = ("first_name,last_name,email,gender,address,course,session_start_year,session_end_year\n"
+        content = ("first_name,last_name,email,gender,address,class,session_start_year,session_end_year\n"
                    "New,Student,new_student@example.com,M,1 Test St,Student Bulk Course,2024-01-01,2024-12-31\n")
         response = self.client.post(reverse('bulk_upload_students'), {'csv_file': csv_file(content)})
         result = response.context['results'][0]
@@ -466,21 +466,21 @@ class BulkUploadStudentTests(TestCase):
         self.assertTrue(user.check_password(generated_password))
 
     def test_unknown_session_reported_as_error(self):
-        content = ("first_name,last_name,email,gender,address,course,session_start_year,session_end_year\n"
+        content = ("first_name,last_name,email,gender,address,class,session_start_year,session_end_year\n"
                    "New,Student,no_session@example.com,M,1 Test St,Student Bulk Course,1999-01-01,1999-12-31\n")
         response = self.client.post(reverse('bulk_upload_students'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
         self.assertFalse(CustomUser.objects.filter(email="no_session@example.com").exists())
 
     def test_bad_date_format_reported_as_error(self):
-        content = ("first_name,last_name,email,gender,address,course,session_start_year,session_end_year\n"
+        content = ("first_name,last_name,email,gender,address,class,session_start_year,session_end_year\n"
                    "Bad,Date,bad_date@example.com,M,1 Test St,Student Bulk Course,not-a-date,also-not\n")
         response = self.client.post(reverse('bulk_upload_students'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'error')
 
     def test_duplicate_email_skipped(self):
         make_student("dup_student@example.com", self.course, self.session)
-        content = ("first_name,last_name,email,gender,address,course,session_start_year,session_end_year\n"
+        content = ("first_name,last_name,email,gender,address,class,session_start_year,session_end_year\n"
                    "Dup,Student,dup_student@example.com,M,1 Test St,Student Bulk Course,2024-01-01,2024-12-31\n")
         response = self.client.post(reverse('bulk_upload_students'), {'csv_file': csv_file(content)})
         self.assertEqual(response.context['results'][0]['status'], 'skipped')
@@ -1163,14 +1163,14 @@ class AuditLogTests(TestCase):
 
     def test_creating_course_is_logged(self):
         self.client.post(reverse('add_course'), {'name': 'Audited Course'})
-        log = AuditLog.objects.filter(action='created', target_model='Course').latest('created_at')
+        log = AuditLog.objects.filter(action='created', target_model='Class').latest('created_at')
         self.assertIn('Audited Course', log.target_repr)
         self.assertEqual(log.actor.email, "audit_admin@example.com")
 
     def test_deleting_course_is_logged(self):
         course = make_course("To Be Deleted")
         self.client.get(reverse('delete_course', args=[course.id]))
-        self.assertTrue(AuditLog.objects.filter(action='deleted', target_model='Course', target_repr='To Be Deleted').exists())
+        self.assertTrue(AuditLog.objects.filter(action='deleted', target_model='Class', target_repr='To Be Deleted').exists())
 
     def test_toggling_staff_status_is_logged(self):
         course = make_course("Audit Toggle Course")

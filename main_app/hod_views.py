@@ -168,7 +168,7 @@ def add_course(request):
     form = CourseForm(request.POST or None)
     context = {
         'form': form,
-        'page_title': 'Add Course'
+        'page_title': 'Add Class'
     }
     if request.method == 'POST':
         if form.is_valid():
@@ -177,7 +177,7 @@ def add_course(request):
                 course = Course()
                 course.name = name
                 course.save()
-                log_action(request, 'created', 'Course', course)
+                log_action(request, 'created', 'Class', course)
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_course'))
             except:
@@ -240,7 +240,7 @@ def bulk_upload_courses(request):
                     logger.exception('Unhandled error in bulk_upload_courses row %s', row_number)
                     results.append({'row': row_number, 'status': 'error', 'message': str(e)})
             messages.info(request, f"Processed {len(results)} row(s).")
-    context = {'form': form, 'results': results, 'page_title': 'Bulk Upload Courses'}
+    context = {'form': form, 'results': results, 'page_title': 'Bulk Upload Classes'}
     return render(request, 'hod_template/bulk_upload_courses.html', context)
 
 
@@ -254,8 +254,8 @@ def bulk_upload_subjects(request):
             for row_number, row in read_csv_rows(request.FILES['csv_file']):
                 name = row.get('name') or ''
                 staff_email = (row.get('staff_email') or '').lower()
-                course_name = row.get('course') or ''
-                missing = [f for f, v in [('name', name), ('staff_email', staff_email), ('course', course_name)] if not v]
+                course_name = row.get('class') or ''
+                missing = [f for f, v in [('name', name), ('staff_email', staff_email), ('class', course_name)] if not v]
                 if missing:
                     results.append({'row': row_number, 'status': 'error', 'message': f"Missing {', '.join(missing)}"})
                     continue
@@ -265,7 +265,7 @@ def bulk_upload_subjects(request):
                     continue
                 course = Course.objects.filter(name__iexact=course_name).first()
                 if course is None:
-                    results.append({'row': row_number, 'status': 'error', 'message': f'No course named "{course_name}"'})
+                    results.append({'row': row_number, 'status': 'error', 'message': f'No class named "{course_name}"'})
                     continue
                 if Subject.objects.filter(name__iexact=name, course=course).exists():
                     results.append({'row': row_number, 'status': 'skipped', 'message': f'"{name}" already exists for {course_name}'})
@@ -294,10 +294,10 @@ def bulk_upload_staff(request):
                 email = (row.get('email') or '').lower()
                 gender = (row.get('gender') or '').upper()
                 address = row.get('address') or ''
-                course_name = row.get('course') or ''
+                course_name = row.get('class') or ''
 
                 missing = [f for f, v in [('first_name', first_name), ('last_name', last_name),
-                                           ('email', email), ('gender', gender), ('course', course_name)] if not v]
+                                           ('email', email), ('gender', gender), ('class', course_name)] if not v]
                 if missing:
                     results.append({'row': row_number, 'status': 'error', 'message': f"Missing {', '.join(missing)}"})
                     continue
@@ -309,7 +309,7 @@ def bulk_upload_staff(request):
                     continue
                 course = Course.objects.filter(name__iexact=course_name).first()
                 if course is None:
-                    results.append({'row': row_number, 'status': 'error', 'message': f'No course named "{course_name}"'})
+                    results.append({'row': row_number, 'status': 'error', 'message': f'No class named "{course_name}"'})
                     continue
                 try:
                     password = get_random_string(10)
@@ -346,12 +346,12 @@ def bulk_upload_students(request):
                 email = (row.get('email') or '').lower()
                 gender = (row.get('gender') or '').upper()
                 address = row.get('address') or ''
-                course_name = row.get('course') or ''
+                course_name = row.get('class') or ''
                 session_start = row.get('session_start_year') or ''
                 session_end = row.get('session_end_year') or ''
 
                 missing = [f for f, v in [('first_name', first_name), ('last_name', last_name),
-                                           ('email', email), ('gender', gender), ('course', course_name),
+                                           ('email', email), ('gender', gender), ('class', course_name),
                                            ('session_start_year', session_start),
                                            ('session_end_year', session_end)] if not v]
                 if missing:
@@ -372,7 +372,7 @@ def bulk_upload_students(request):
                     continue
                 course = Course.objects.filter(name__iexact=course_name).first()
                 if course is None:
-                    results.append({'row': row_number, 'status': 'error', 'message': f'No course named "{course_name}"'})
+                    results.append({'row': row_number, 'status': 'error', 'message': f'No class named "{course_name}"'})
                     continue
                 session = Session.objects.filter(start_year=session_start, end_year=session_end).first()
                 if session is None:
@@ -437,7 +437,7 @@ def manage_course(request):
     context = {
         'courses': courses,
         'page_obj': courses,
-        'page_title': 'Manage Courses'
+        'page_title': 'Manage Classes'
     }
     return render(request, "hod_template/manage_course.html", context)
 
@@ -554,7 +554,7 @@ def edit_course(request, course_id):
     context = {
         'form': form,
         'course_id': course_id,
-        'page_title': 'Edit Course'
+        'page_title': 'Edit Class'
     }
     if request.method == 'POST':
         if form.is_valid():
@@ -563,7 +563,7 @@ def edit_course(request, course_id):
                 course = Course.objects.get(id=course_id)
                 course.name = name
                 course.save()
-                log_action(request, 'updated', 'Course', course)
+                log_action(request, 'updated', 'Class', course)
                 messages.success(request, "Successfully Updated")
             except:
                 logger.exception('Unhandled error in edit_course')
@@ -989,12 +989,12 @@ def delete_course(request, course_id):
     try:
         course_repr = str(course)
         course.delete()
-        log_action(request, 'deleted', 'Course', course_repr)
-        messages.success(request, "Course deleted successfully!")
+        log_action(request, 'deleted', 'Class', course_repr)
+        messages.success(request, "Class deleted successfully!")
     except Exception:
         logger.exception('Unhandled error in delete_course')
         messages.error(
-            request, "Sorry, some students are assigned to this course already. Kindly change the affected student course and try again")
+            request, "Sorry, some students are assigned to this class already. Kindly change the affected student's class and try again")
     return redirect(reverse('manage_course'))
 
 
@@ -1225,7 +1225,7 @@ def report_attendance_summary_csv(request):
     rows = [(row['course'], row['total'], row['present'], row['absent'], row['leave'], f"{row['percent']}%")
             for row in data['course_summary']]
     filename = f"attendance_summary_{data['start_date']}_to_{data['end_date']}.csv"
-    return csv_response(filename, ['Course', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %'], rows)
+    return csv_response(filename, ['Class', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %'], rows)
 
 
 def report_attendance_by_subject_csv(request):
@@ -1233,7 +1233,7 @@ def report_attendance_by_subject_csv(request):
     rows = [(row['course'], row['subject'], row['total'], row['present'], row['absent'], row['leave'],
              f"{row['percent']}%") for row in data['subject_summary']]
     filename = f"attendance_by_subject_{data['start_date']}_to_{data['end_date']}.csv"
-    return csv_response(filename, ['Course', 'Subject', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %'], rows)
+    return csv_response(filename, ['Class', 'Subject', 'Total', 'Present', 'Absent', 'Leave', 'Attendance %'], rows)
 
 
 def report_attendance_by_student_csv(request):
@@ -1431,7 +1431,7 @@ def report_results_csv(request):
     data = _results_report_data(request)
     rows = [(r.subject.course.name, r.subject.name, str(r.student), r.test, r.exam)
             for r in data['results']]
-    return csv_response('results_report.csv', ['Course', 'Subject', 'Student', 'Test', 'Exam'], rows)
+    return csv_response('results_report.csv', ['Class', 'Subject', 'Student', 'Test', 'Exam'], rows)
 
 
 def report_activity_log(request):

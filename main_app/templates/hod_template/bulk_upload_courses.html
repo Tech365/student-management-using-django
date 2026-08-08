@@ -15,7 +15,7 @@
                         {% csrf_token %}
                         <div class="card-body">
                             <p>
-                                Upload a CSV file with a single <code>name</code> column, one course per row.
+                                Upload a CSV file with a single <code>name</code> column, one class per row.
                                 <a href="{% static 'samples/courses_template.csv' %}" download>Download a sample CSV</a>.
                             </p>
                             {{ form.csv_file.errors }}
@@ -25,7 +25,7 @@
                         </div>
                         <div class="card-footer">
                             <button type="submit" class="btn btn-primary">Upload</button>
-                            <a href="{% url 'add_course' %}" class="btn btn-secondary">Back to Add Course</a>
+                            <a href="{% url 'add_course' %}" class="btn btn-secondary">Back to Add Class</a>
                         </div>
                     </form>
                     {% include "includes/bulk_upload_results.html" %}

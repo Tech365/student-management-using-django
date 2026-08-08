@@ -14,9 +14,9 @@
                     <div class="card-body">
                         <form method="GET" class="form-inline">
                             <div class="form-group mr-2">
-                                <label class="mr-2">Course</label>
+                                <label class="mr-2">Class</label>
                                 <select name="course" class="form-control">
-                                    <option value="">All Courses</option>
+                                    <option value="">All Classes</option>
                                     {% for course in courses %}
                                     <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
                                     {% endfor %}
@@ -65,12 +65,12 @@
                 </div>
 
                 <div class="card">
-                    <div class="card-header"><h3 class="card-title">By Course</h3></div>
+                    <div class="card-header"><h3 class="card-title">By Class</h3></div>
                     <div class="card-body">
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Course</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr>
+                                    <tr><th>Class</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for row in course_summary %}
@@ -105,7 +105,7 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Course</th><th>Subject</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr>
+                                    <tr><th>Class</th><th>Subject</th><th>Total</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for row in subject_summary %}

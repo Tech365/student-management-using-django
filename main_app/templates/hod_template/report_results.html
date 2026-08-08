@@ -14,9 +14,9 @@
                     <div class="card-body">
                         <form method="GET" class="form-inline">
                             <div class="form-group mr-2">
-                                <label class="mr-2">Course</label>
+                                <label class="mr-2">Class</label>
                                 <select name="course" class="form-control">
-                                    <option value="">All Courses</option>
+                                    <option value="">All Classes</option>
                                     {% for course in courses %}
                                     <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
                                     {% endfor %}
@@ -77,7 +77,7 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Course</th><th>Subject</th><th>Student</th><th>Test</th><th>Exam</th></tr>
+                                    <tr><th>Class</th><th>Subject</th><th>Student</th><th>Test</th><th>Exam</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for result in results %}

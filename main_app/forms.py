@@ -63,6 +63,7 @@ class StudentForm(CustomUserForm):
         model = Student
         fields = CustomUserForm.Meta.fields + \
             ['course', 'session']
+        labels = {'course': 'Class'}
 
 
 class AdminForm(CustomUserForm):
@@ -82,6 +83,7 @@ class StaffForm(CustomUserForm):
         model = Staff
         fields = CustomUserForm.Meta.fields + \
             ['course' ]
+        labels = {'course': 'Class'}
 
 
 class CourseForm(FormSettings):
@@ -101,6 +103,7 @@ class SubjectForm(FormSettings):
     class Meta:
         model = Subject
         fields = ['name', 'staff', 'course']
+        labels = {'course': 'Class'}
 
 
 class SessionForm(FormSettings):

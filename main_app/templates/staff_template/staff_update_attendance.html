@@ -20,7 +20,7 @@
 
 
                         <div class="form-group">
-                            <label>Course</label>
+                            <label>Class</label>
                             <select name="course" class="form-control" id='course'>
                                 <option value="">----</option>
                                 {% for course in courses %}
@@ -31,7 +31,7 @@
                         <div class="form-group">
                             <label>Subject</label>
                             <select name="subject" class="form-control" id='subject' disabled>
-                                <option value="">Select a course first</option>
+                                <option value="">Select a class first</option>
                             </select>
                             <select id='all-subjects' style="display:none;">
                                 {% for subject in subjects %}
@@ -94,7 +94,7 @@
             var course = $(this).val()
             var subjectSelect = $("#subject")
             if (course.length == 0) {
-                subjectSelect.html('<option value="">Select a course first</option>')
+                subjectSelect.html('<option value="">Select a class first</option>')
                 subjectSelect.prop("disabled", true)
                 return
             }
@@ -110,7 +110,7 @@
             var subject = $("#subject").val()
             var session = $("#session").val()
             if (course.length < 1 || session.length < 1 || subject.length < 1){
-                $("#error_attendance").html("Kindly choose course, subject and session")
+                $("#error_attendance").html("Kindly choose class, subject and session")
                 $("#attendance_block").hide()
                 $("#error_attendance").show()
                 return false

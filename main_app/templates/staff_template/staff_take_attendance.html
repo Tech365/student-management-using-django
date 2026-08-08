@@ -20,7 +20,7 @@
 
 
                         <div class="form-group">
-                            <label>Course</label>
+                            <label>Class</label>
                             <select name="course" class="form-control" id='course'>
                                 <option value="">----</option>
                                 {% for course in courses %}
@@ -32,7 +32,7 @@
                         <div class="form-group">
                             <label>Subject</label>
                             <select name="subject" class="form-control" id='subject' disabled>
-                                <option value="">Select a course first</option>
+                                <option value="">Select a class first</option>
                             </select>
                             <select id='all-subjects' style="display:none;">
                                 {% for subject in subjects %}
@@ -84,7 +84,7 @@
             var course = $(this).val()
             var subjectSelect = $("#subject")
             if (course.length == 0) {
-                subjectSelect.html('<option value="">Select a course first</option>')
+                subjectSelect.html('<option value="">Select a class first</option>')
                 subjectSelect.prop("disabled", true)
                 return
             }
@@ -102,7 +102,7 @@
             var attendance_date = $("#attendance_date").val()
             $("#student_data").html(null)
 if (course.length == 0 || subject.length == 0 || session.length == 0 || attendance_date.length == 0){
-    alert("Please select course, subject, session and date");
+    alert("Please select class, subject, session and date");
     return false;
 }
             $.ajax({
