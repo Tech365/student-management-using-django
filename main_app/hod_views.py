@@ -37,6 +37,10 @@ def admin_home(request):
     subjects = Subject.objects.all()
     total_subject = subjects.count()
     total_course = Course.objects.all().count()
+    total_pending_leave = (
+        LeaveReportStudent.objects.filter(status=0).count()
+        + LeaveReportStaff.objects.filter(status=0).count()
+    )
     attendance_counts = dict(
         Attendance.objects.filter(subject__in=subjects)
         .values_list('subject').annotate(count=Count('id'))
@@ -49,6 +53,7 @@ def admin_home(request):
         'total_staff': total_staff,
         'total_course': total_course,
         'total_subject': total_subject,
+        'total_pending_leave': total_pending_leave,
         'subject_list': subject_list,
         'attendance_list': attendance_list
 
@@ -417,6 +422,17 @@ def manage_staff(request):
     return render(request, "hod_template/manage_staff.html", context)
 
 
+def manage_staff_csv(request):
+    staff_qs = CustomUser.objects.filter(user_type=2).select_related('staff').order_by('id')
+    classes_by_staff = staff_class_names_map([user.staff.id for user in staff_qs])
+    rows = [
+        (user.last_name, user.first_name, user.email, user.gender,
+         classes_by_staff.get(user.staff.id, ''), 'Active' if user.is_active else 'Inactive')
+        for user in staff_qs
+    ]
+    return csv_response('staff.csv', ['Last Name', 'First Name', 'Email', 'Gender', 'Classes', 'Status'], rows)
+
+
 def manage_student(request):
     students = paginate(request, CustomUser.objects.filter(user_type=3).select_related('student', 'student__course', 'student__session').order_by('id'))
     context = {
@@ -425,6 +441,20 @@ def manage_student(request):
         'page_title': 'Manage Students'
     }
     return render(request, "hod_template/manage_student.html", context)
+
+
+def manage_student_csv(request):
+    students = CustomUser.objects.filter(user_type=3).select_related(
+        'student', 'student__course', 'student__session').order_by('id')
+    rows = [
+        (user.last_name, user.first_name, user.email, user.gender,
+         user.student.course.name if user.student.course_id else '',
+         str(user.student.session) if user.student.session_id else '',
+         'Active' if user.is_active else 'Inactive')
+        for user in students
+    ]
+    return csv_response('students.csv',
+                         ['Last Name', 'First Name', 'Email', 'Gender', 'Class', 'Session', 'Status'], rows)
 
 
 def manage_course(request):
@@ -1035,6 +1065,36 @@ def delete_session(request, session_id):
 # Reports
 # ---------------------------------------------------------------------------
 
+def _class_subjects_report_data(request):
+    course_id = request.GET.get('course') or ''
+    staff_id = request.GET.get('staff') or ''
+    subjects = Subject.objects.select_related('course', 'staff__admin').order_by('course__name', 'name')
+    if course_id:
+        subjects = subjects.filter(course_id=course_id)
+    if staff_id:
+        subjects = subjects.filter(staff_id=staff_id)
+    return {'course_id': course_id, 'staff_id': staff_id, 'subjects': subjects}
+
+
+def report_class_subjects(request):
+    data = _class_subjects_report_data(request)
+    context = {
+        'page_title': 'Class & Subject Assignments',
+        'courses': Course.objects.order_by('name'),
+        'staff_list': Staff.objects.select_related('admin').order_by('admin__first_name'),
+        'selected_course': data['course_id'],
+        'selected_staff': data['staff_id'],
+        'subjects': data['subjects'],
+    }
+    return render(request, 'hod_template/report_class_subjects.html', context)
+
+
+def report_class_subjects_csv(request):
+    data = _class_subjects_report_data(request)
+    rows = [(s.course.name, s.name, str(s.staff)) for s in data['subjects']]
+    return csv_response('class_subject_assignments.csv', ['Class', 'Subject', 'Teacher'], rows)
+
+
 def _exclude_approved_leave(reports):
     """Drop AttendanceReport rows that fall on a date the student had an
     approved leave application for, so a leave day counts neither as
@@ -1344,12 +1404,13 @@ def report_student_attendance_csv(request):
 def _leave_report_data(request):
     leave_type = request.GET.get('type') or 'all'
     status = request.GET.get('status') or 'all'
+    course_id = request.GET.get('course') or ''
     start_date = request.GET.get('start_date') or ''
     end_date = request.GET.get('end_date') or ''
 
     status_map = {'pending': 0, 'approved': 1, 'rejected': -1}
 
-    student_leaves = LeaveReportStudent.objects.select_related('student', 'student__admin')
+    student_leaves = LeaveReportStudent.objects.select_related('student', 'student__admin', 'student__course')
     staff_leaves = LeaveReportStaff.objects.select_related('staff', 'staff__admin')
     if status in status_map:
         student_leaves = student_leaves.filter(status=status_map[status])
@@ -1360,22 +1421,33 @@ def _leave_report_data(request):
     if end_date:
         student_leaves = student_leaves.filter(date__lte=end_date)
         staff_leaves = staff_leaves.filter(date__lte=end_date)
+    if course_id:
+        student_leaves = student_leaves.filter(student__course_id=course_id)
+        # A staff member has no single class - "in this class" means they
+        # teach at least one subject there.
+        staff_leaves = staff_leaves.filter(staff__subject__course_id=course_id).distinct()
+
+    # A staff member's classes are every course they teach a subject in
+    # (see teacher_course_ids), not a single field - look them all up once.
+    staff_classes = staff_class_names_map([l.staff_id for l in staff_leaves])
 
     records = []
     if leave_type in ('all', 'student'):
         records += [{
             'type': 'Student', 'name': str(l.student), 'date': l.date,
+            'class_names': l.student.course.name if l.student.course_id else '—',
             'message': l.message, 'status_label': LEAVE_STATUS_LABELS.get(l.status, 'Unknown'),
         } for l in student_leaves]
     if leave_type in ('all', 'staff'):
         records += [{
             'type': 'Staff', 'name': str(l.staff), 'date': l.date,
+            'class_names': staff_classes.get(l.staff_id, '—'),
             'message': l.message, 'status_label': LEAVE_STATUS_LABELS.get(l.status, 'Unknown'),
         } for l in staff_leaves]
     records.sort(key=lambda r: r['date'], reverse=True)
 
     return {
-        'leave_type': leave_type, 'status': status,
+        'leave_type': leave_type, 'status': status, 'course_id': course_id,
         'start_date': start_date, 'end_date': end_date,
         'records': records,
     }
@@ -1385,9 +1457,11 @@ def report_leave(request):
     data = _leave_report_data(request)
     context = {
         'page_title': 'Leave Report',
+        'courses': Course.objects.order_by('name'),
         'records': data['records'],
         'selected_type': data['leave_type'],
         'selected_status': data['status'],
+        'selected_course': data['course_id'],
         'start_date': data['start_date'],
         'end_date': data['end_date'],
     }
@@ -1396,8 +1470,9 @@ def report_leave(request):
 
 def report_leave_csv(request):
     data = _leave_report_data(request)
-    rows = [(r['type'], r['name'], r['date'], r['status_label'], r['message']) for r in data['records']]
-    return csv_response('leave_report.csv', ['Type', 'Name', 'Date', 'Status', 'Message'], rows)
+    rows = [(r['type'], r['name'], r['class_names'], r['date'], r['status_label'], r['message'])
+            for r in data['records']]
+    return csv_response('leave_report.csv', ['Type', 'Name', 'Class', 'Date', 'Status', 'Message'], rows)
 
 
 def _results_report_data(request):

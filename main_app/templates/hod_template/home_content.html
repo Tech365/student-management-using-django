@@ -67,6 +67,21 @@
                 </div>
             </div>
             <!-- ./col -->
+            <div class="col-lg-3 col-6">
+                <!-- small box -->
+                <div class="small-box bg-secondary">
+                    <div class="inner">
+                        <h3>{{total_pending_leave}}</h3>
+
+                        <p>Pending Leave Requests</p>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-user-clock"></i>
+                    </div>
+                    <a href="{% url 'report_leave' %}?status=pending" class="small-box-footer">Review <i class="fas fa-arrow-circle-right"></i></a>
+                </div>
+            </div>
+            <!-- ./col -->
         </div>
         <!-- /.row -->
         <!-- Main row -->

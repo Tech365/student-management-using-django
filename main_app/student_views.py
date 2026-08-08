@@ -59,9 +59,9 @@ def student_home(request):
 def student_view_attendance(request):
     student = get_object_or_404(Student, admin=request.user)
     if request.method != 'POST':
-        course = get_object_or_404(Course, id=student.course.id)
+        subjects = Subject.objects.filter(course=student.course) if student.course_id else Subject.objects.none()
         context = {
-            'subjects': Subject.objects.filter(course=course),
+            'subjects': subjects,
             'page_title': 'View Attendance'
         }
         return render(request, 'student_template/student_view_attendance.html', context)

@@ -67,7 +67,9 @@ urlpatterns = [
     path("admin/toggle-status/<int:admin_id>",
          hod_views.toggle_admin_status, name='toggle_admin_status'),
     path("staff/manage/", hod_views.manage_staff, name='manage_staff'),
+    path("staff/manage/csv/", hod_views.manage_staff_csv, name='manage_staff_csv'),
     path("student/manage/", hod_views.manage_student, name='manage_student'),
+    path("student/manage/csv/", hod_views.manage_student_csv, name='manage_student_csv'),
     path("course/manage/", hod_views.manage_course, name='manage_course'),
     path("subject/manage/", hod_views.manage_subject, name='manage_subject'),
     path("staff/edit/<int:staff_id>", hod_views.edit_staff, name='edit_staff'),
@@ -162,6 +164,8 @@ urlpatterns = [
     path("reports/leave/csv/", hod_views.report_leave_csv, name='report_leave_csv'),
     path("reports/results/", hod_views.report_results, name='report_results'),
     path("reports/results/csv/", hod_views.report_results_csv, name='report_results_csv'),
+    path("reports/class-subjects/", hod_views.report_class_subjects, name='report_class_subjects'),
+    path("reports/class-subjects/csv/", hod_views.report_class_subjects_csv, name='report_class_subjects_csv'),
     path("reports/activity-log/", hod_views.report_activity_log, name='report_activity_log'),
     path("reports/activity-log/csv/", hod_views.report_activity_log_csv, name='report_activity_log_csv'),
 

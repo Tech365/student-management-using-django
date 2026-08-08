@@ -312,6 +312,67 @@ class SaveAttendanceTests(TestCase):
         self.assertTrue(AttendanceReport.objects.filter(student=self.student).exists())
 
 
+class AttendanceEndpointsPermissionTests(TestCase):
+    """Regression tests: get_students, save_attendance,
+    get_student_attendance, and update_attendance never checked that the
+    subject/attendance being acted on actually belonged to the logged-in
+    staff member - any authenticated teacher could read or write another
+    teacher's class's attendance by submitting a different subject id or
+    attendance id, e.g. copied from that class's own page HTML."""
+
+    def setUp(self):
+        self.session = make_session()
+        self.owner_course = make_course("Owner Course")
+        self.intruder_course = make_course("Intruder Course")
+        self.owner = make_staff("attendance_owner@example.com", self.owner_course)
+        self.intruder = make_staff("attendance_intruder@example.com", self.intruder_course)
+        self.owner_subject = Subject.objects.create(name="Owner Subject", staff=self.owner, course=self.owner_course)
+        self.owner_student = make_student("attendance_owner_student@example.com", self.owner_course, self.session)
+        self.attendance = Attendance.objects.create(
+            session=self.session, subject=self.owner_subject, date=datetime.date(2026, 8, 8))
+        self.report = AttendanceReport.objects.create(
+            student=self.owner_student, attendance=self.attendance, status=True)
+        self.client.login(username="attendance_intruder@example.com", password=PASSWORD)
+
+    def test_get_students_rejects_other_teachers_subject(self):
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.owner_subject.id, 'session': self.session.id, 'date': '2026-08-08',
+        })
+        self.assertEqual(response.status_code, 400)
+
+    def test_save_attendance_rejects_other_teachers_subject(self):
+        response = self.client.post(reverse('save_attendance'), {
+            'date': '2026-08-08', 'subject': self.owner_subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.owner_student.id, 'status': 0}]),
+        })
+        self.assertEqual(response.content, b"False")
+        self.report.refresh_from_db()
+        self.assertTrue(self.report.status)  # untouched
+
+    def test_get_student_attendance_rejects_other_teachers_attendance(self):
+        response = self.client.post(reverse('get_student_attendance'), {
+            'attendance_date_id': self.attendance.id,
+        })
+        self.assertEqual(response.status_code, 400)
+
+    def test_update_attendance_rejects_other_teachers_attendance(self):
+        response = self.client.post(reverse('update_attendance'), {
+            'date': self.attendance.id,
+            'student_ids': json.dumps([{'id': self.owner_student.admin_id, 'status': 0}]),
+        })
+        self.assertEqual(response.content, b"False")
+        self.report.refresh_from_db()
+        self.assertTrue(self.report.status)  # untouched
+
+    def test_owner_can_still_use_their_own_endpoints(self):
+        self.client.logout()
+        self.client.login(username="attendance_owner@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.owner_subject.id, 'session': self.session.id, 'date': '2026-08-08',
+        })
+        self.assertEqual(response.status_code, 200)
+
+
 class ViewUpdateAttendanceLeaveTests(TestCase):
     """A student on approved leave never gets an AttendanceReport (see
     SaveAttendanceTests), but should still show up - disabled - in
@@ -380,6 +441,24 @@ class AdminViewAttendanceLeaveTests(TestCase):
         })
         rows = json.loads(response.json())
         self.assertEqual(rows[0]['status'], 'On Leave')
+
+
+class StudentViewAttendanceCourselessTests(TestCase):
+    """Regression test: student_view_attendance's GET branch dereferenced
+    student.course.id directly, crashing with an AttributeError (500) for
+    a student whose course was never set/was cleared - course=None is an
+    explicitly reachable, otherwise-handled state elsewhere in the app."""
+
+    def test_courseless_student_sees_empty_page_not_500(self):
+        course = make_course()
+        session = make_session()
+        student = make_student("courseless_view_attendance@example.com", course, session)
+        student.course = None
+        student.save()
+        self.client.login(username="courseless_view_attendance@example.com", password=PASSWORD)
+        response = self.client.get(reverse('student_view_attendance'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context['subjects']), [])
 
 
 class CsrfEnforcementTests(TestCase):

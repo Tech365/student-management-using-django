@@ -86,7 +86,10 @@ def get_students(request):
     session_id = request.POST.get('session')
     attendance_date = request.POST.get('date')
     try:
-        subject = get_object_or_404(Subject, id=subject_id)
+        staff = get_object_or_404(Staff, admin=request.user)
+        # Scoped to `staff` so a teacher can't submit another teacher's
+        # subject_id and pull up a class they don't teach.
+        subject = get_object_or_404(Subject, id=subject_id, staff=staff)
         session = get_object_or_404(Session, id=session_id)
         students = Student.objects.filter(
             course_id=subject.course.id, session=session)
@@ -112,8 +115,11 @@ def save_attendance(request):
     session_id = request.POST.get('session')
     students = json.loads(student_data)
     try:
+        staff = get_object_or_404(Staff, admin=request.user)
         session = get_object_or_404(Session, id=session_id)
-        subject = get_object_or_404(Subject, id=subject_id)
+        # Scoped to `staff` so a teacher can't record/overwrite attendance
+        # for a class they don't teach by submitting another subject_id.
+        subject = get_object_or_404(Subject, id=subject_id, staff=staff)
 
         # Check if an attendance object already exists for the given date and session
         attendance, created = Attendance.objects.get_or_create(session=session, subject=subject, date=date)
@@ -164,7 +170,10 @@ def staff_update_attendance(request):
 def get_student_attendance(request):
     attendance_date_id = request.POST.get('attendance_date_id')
     try:
-        attendance = get_object_or_404(Attendance, id=attendance_date_id)
+        staff = get_object_or_404(Staff, admin=request.user)
+        # Scoped to `staff` so a teacher can't view another class's
+        # attendance by submitting another attendance_date_id.
+        attendance = get_object_or_404(Attendance, id=attendance_date_id, subject__staff=staff)
         # The full class roster, not just students with an existing
         # AttendanceReport - a student on approved leave never gets one
         # (see save_attendance), but should still show up here, disabled,
@@ -196,7 +205,10 @@ def update_attendance(request):
     date = request.POST.get('date')
     students = json.loads(student_data)
     try:
-        attendance = get_object_or_404(Attendance, id=date)
+        staff = get_object_or_404(Staff, admin=request.user)
+        # Scoped to `staff` so a teacher can't overwrite another class's
+        # attendance by submitting another attendance id.
+        attendance = get_object_or_404(Attendance, id=date, subject__staff=staff)
 
         admin_ids = [student_dict.get('id') for student_dict in students]
         students_by_admin_id = {
@@ -408,8 +420,7 @@ def staff_add_result(request):
                 data.test = test
                 data.save()
                 messages.success(request, "Scores Updated")
-            except:
-                logger.exception('Unhandled error in staff_add_result')
+            except StudentResult.DoesNotExist:
                 result = StudentResult(student=student, subject=subject, test=test, exam=exam)
                 result.save()
                 messages.success(request, "Scores Saved")
