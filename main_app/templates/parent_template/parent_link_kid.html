@@ -11,24 +11,69 @@
                     <div class="card-header">
                         <h3 class="card-title">{{page_title}}</h3>
                     </div>
-                    {% include "main_app/form_template.html" with messages=messages  form=form button_text="Submit for Approval"%}
+                    <div class="card-body">
+                        {% if messages %}
+                        {% for message in messages %}
+                        <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}">{{ message }}</div>
+                        {% endfor %}
+                        {% endif %}
+                        {% if formset.non_form_errors %}
+                        <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+                        {% endif %}
+                        <form method="post">
+                            {% csrf_token %}
+                            <div id="children-container">
+                                {{ formset.management_form }}
+                                {% for child_form in formset %}
+                                <div class="child-block border rounded p-2 mb-2">
+                                    <p class="text-muted mb-2">Child {{ forloop.counter }}</p>
+                                    {% for field in child_form %}
+                                    <div class="form-group">
+                                        {{ field.errors }}
+                                        {{ field.label_tag }}
+                                        {{ field }}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <button type="button" id="add-child" class="btn btn-outline-secondary btn-sm mb-3">
+                                <i class="fas fa-plus"></i> Add Another Child
+                            </button>
+                            <button type="submit" class="btn btn-primary btn-block">Submit for Approval</button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </section>
+
+<div id="empty-form-template" style="display:none;">
+    <div class="child-block border rounded p-2 mb-2">
+        <p class="text-muted mb-2">Child</p>
+        {% for field in formset.empty_form %}
+        <div class="form-group">
+            {{ field.label_tag }}
+            {{ field }}
+        </div>
+        {% endfor %}
+    </div>
+</div>
 {% endblock content %}
 
 {% block custom_js %}
 <script>
     $(document).ready(function () {
-        function loadStudents(selected) {
-            var courseId = $('#id_course').val();
-            var $student = $('#id_student');
+        function loadStudentsFor($courseSelect, selected) {
+            var $block = $courseSelect.closest('.child-block');
+            var $student = $block.find('select[id$="-student"]');
+            var courseId = $courseSelect.val();
             if (!courseId) {
                 $student.empty().append($('<option>', {value: '', text: '---------'}));
                 return;
             }
+            $student.empty().append($('<option>', {value: '', text: 'Loading...'}));
             $.ajax({
                 url: "{% url 'parent_register_get_students' %}",
                 type: 'POST',
@@ -50,9 +95,18 @@
                 $student.empty().append($('<option>', {value: '', text: 'Could not load students'}));
             });
         }
-        var initialStudent = $('#id_student').val();
-        $('#id_course').on('change', function () { loadStudents(null); });
-        if ($('#id_course').val()) { loadStudents(initialStudent); }
+
+        $('#children-container').on('change', 'select[id$="-course"]', function () {
+            loadStudentsFor($(this), null);
+        });
+
+        $('#add-child').on('click', function () {
+            var $totalForms = $('#id_child-TOTAL_FORMS');
+            var formIdx = parseInt($totalForms.val(), 10);
+            var newBlockHtml = $('#empty-form-template').html().replace(/__prefix__/g, formIdx);
+            $('#children-container').append(newBlockHtml);
+            $totalForms.val(formIdx + 1);
+        });
     });
 </script>
 {% endblock custom_js %}

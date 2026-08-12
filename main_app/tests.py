@@ -1467,15 +1467,21 @@ class ParentFeatureTests(TestCase):
         self.session = make_session()
         self.student = make_student("parent_feature_kid@example.com", self.course, self.session)
 
-    def _register_parent(self, email="new_parent@example.com", student=None):
-        student = student or self.student
-        return self.client.post(reverse('parent_register'), {
+    def _register_parent(self, email="new_parent@example.com", students=None):
+        students = students or [self.student]
+        data = {
             'first_name': 'New', 'last_name': 'Parent', 'email': email,
             'gender': 'M', 'address': '1 Test St', 'password': PASSWORD,
             'contact_number': '5551234',
-            'course': self.course.id, 'student': student.id,
-            'relationship': 'father', 'date_of_birth': '2015-01-01',
-        })
+            'child-TOTAL_FORMS': str(len(students)), 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+        }
+        for i, student in enumerate(students):
+            data[f'child-{i}-course'] = self.course.id
+            data[f'child-{i}-student'] = student.id
+            data[f'child-{i}-relationship'] = 'father'
+            data[f'child-{i}-date_of_birth'] = '2015-01-01'
+        return self.client.post(reverse('parent_register'), data)
 
     def test_registration_creates_pending_link_and_active_account(self):
         response = self._register_parent()
@@ -1485,6 +1491,39 @@ class ParentFeatureTests(TestCase):
         self.assertTrue(user.is_active)
         link = ParentStudentLink.objects.get(parent=user.parent, student=self.student)
         self.assertEqual(link.status, 0)
+
+    def test_registration_supports_multiple_children_in_one_submission(self):
+        second_student = make_student("parent_feature_kid2@example.com", self.course, self.session)
+        response = self._register_parent(students=[self.student, second_student])
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email="new_parent@example.com")
+        self.assertEqual(ParentStudentLink.objects.filter(parent=user.parent).count(), 2)
+        self.assertTrue(ParentStudentLink.objects.filter(parent=user.parent, student=self.student).exists())
+        self.assertTrue(ParentStudentLink.objects.filter(parent=user.parent, student=second_student).exists())
+
+    def test_registration_requires_at_least_one_child(self):
+        response = self.client.post(reverse('parent_register'), {
+            'first_name': 'New', 'last_name': 'Parent', 'email': 'no_child_parent@example.com',
+            'gender': 'M', 'address': '1 Test St', 'password': PASSWORD, 'contact_number': '5551234',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(CustomUser.objects.filter(email='no_child_parent@example.com').exists())
+
+    def test_link_another_kid_supports_multiple_children_at_once(self):
+        second_student = make_student("parent_feature_kid3@example.com", self.course, self.session)
+        self._register_parent()
+        self.client.login(username="new_parent@example.com", password=PASSWORD)
+        response = self.client.post(reverse('parent_link_kid'), {
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': second_student.id,
+            'child-0-relationship': 'mother', 'child-0-date_of_birth': '2016-02-02',
+        })
+        self.assertEqual(response.status_code, 302)
+        parent = Parent.objects.get(admin__email="new_parent@example.com")
+        self.assertTrue(ParentStudentLink.objects.filter(parent=parent, student=second_student).exists())
 
     def test_parent_can_log_in_immediately_after_registering(self):
         self._register_parent()

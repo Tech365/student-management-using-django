@@ -214,9 +214,9 @@ class ParentLinkRequestForm(forms.Form):
     to the way FormSettings' other subclasses do."""
 
     course = forms.ModelChoiceField(queryset=Course.objects.all(), label="Class")
-    student = forms.ModelChoiceField(queryset=Student.objects.none())
+    student = forms.ModelChoiceField(queryset=Student.objects.none(), label="Child's Name")
     relationship = forms.ChoiceField(choices=ParentStudentLink.RELATIONSHIP)
-    date_of_birth = forms.DateField(widget=DateInput(attrs={'type': 'date'}))
+    date_of_birth = forms.DateField(widget=DateInput(attrs={'type': 'date'}), label="Child's Date of Birth")
 
     def __init__(self, *args, **kwargs):
         super(ParentLinkRequestForm, self).__init__(*args, **kwargs)
@@ -230,6 +230,14 @@ class ParentLinkRequestForm(forms.Form):
         # it, so widen it only then.
         if self.is_bound:
             self.fields['student'].queryset = Student.objects.all()
+
+
+# A parent can have more than one kid at the school, so both registration
+# and "link another kid" let them submit several ParentLinkRequestForms at
+# once (min_num=1/validate_min: at least one child is required; extra=1:
+# one block shown by default, with more added client-side).
+ParentLinkRequestFormSet = forms.formset_factory(
+    ParentLinkRequestForm, extra=1, min_num=1, validate_min=True)
 
 
 class EditResultForm(FormSettings):

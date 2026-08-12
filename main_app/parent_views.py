@@ -9,7 +9,8 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from .forms import LeaveReportStudentForm, ParentEditForm, ParentLinkRequestForm, ParentRegistrationForm
+from .forms import (LeaveReportStudentForm, ParentEditForm,
+                    ParentLinkRequestFormSet, ParentRegistrationForm)
 from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      LeaveReportStudent, NotificationStaff, Parent,
                      ParentStudentLink, Staff, Student, Subject)
@@ -22,15 +23,15 @@ logger = logging.getLogger(__name__)
 
 def parent_register(request):
     reg_form = ParentRegistrationForm(request.POST or None, request.FILES or None)
-    link_form = ParentLinkRequestForm(request.POST or None)
+    link_formset = ParentLinkRequestFormSet(request.POST or None, prefix='child')
     context = {
         'reg_form': reg_form,
-        'link_form': link_form,
+        'link_formset': link_formset,
         'courses': Course.objects.all(),
         'page_title': 'Register as a Parent',
     }
     if request.method == 'POST':
-        if reg_form.is_valid() and link_form.is_valid():
+        if reg_form.is_valid() and link_formset.is_valid():
             first_name = reg_form.cleaned_data.get('first_name')
             last_name = reg_form.cleaned_data.get('last_name')
             address = reg_form.cleaned_data.get('address')
@@ -52,17 +53,20 @@ def parent_register(request):
                 user.address = address
                 user.parent.contact_number = contact_number
                 user.save()
-                ParentStudentLink.objects.create(
-                    parent=user.parent,
-                    student=link_form.cleaned_data['student'],
-                    relationship=link_form.cleaned_data['relationship'],
-                    date_of_birth=link_form.cleaned_data['date_of_birth'],
-                )
+                for child_form in link_formset:
+                    if not child_form.cleaned_data:
+                        continue  # an unfilled extra row
+                    ParentStudentLink.objects.create(
+                        parent=user.parent,
+                        student=child_form.cleaned_data['student'],
+                        relationship=child_form.cleaned_data['relationship'],
+                        date_of_birth=child_form.cleaned_data['date_of_birth'],
+                    )
                 log_action(request, 'created', 'Parent', user)
                 messages.success(
                     request,
-                    "Registration submitted! You can log in now - the link to your "
-                    "child will show as pending until the school approves it.")
+                    "Registration submitted! You can log in now - the link(s) to your "
+                    "child(ren) will show as pending until the Madrasa Admin approves them.")
                 return redirect(reverse('login_page'))
             except Exception as e:
                 logger.exception('Unhandled error in parent_register')
@@ -99,26 +103,29 @@ def parent_home(request):
 
 def parent_link_kid(request):
     parent = get_object_or_404(Parent, admin=request.user)
-    form = ParentLinkRequestForm(request.POST or None)
+    formset = ParentLinkRequestFormSet(request.POST or None, prefix='child')
     context = {
-        'form': form,
+        'formset': formset,
         'courses': Course.objects.all(),
         'page_title': 'Link Another Kid',
     }
     if request.method == 'POST':
-        if form.is_valid():
+        if formset.is_valid():
             try:
-                ParentStudentLink.objects.create(
-                    parent=parent,
-                    student=form.cleaned_data['student'],
-                    relationship=form.cleaned_data['relationship'],
-                    date_of_birth=form.cleaned_data['date_of_birth'],
-                )
-                messages.success(request, "Request submitted for admin approval")
+                for child_form in formset:
+                    if not child_form.cleaned_data:
+                        continue
+                    ParentStudentLink.objects.create(
+                        parent=parent,
+                        student=child_form.cleaned_data['student'],
+                        relationship=child_form.cleaned_data['relationship'],
+                        date_of_birth=child_form.cleaned_data['date_of_birth'],
+                    )
+                messages.success(request, "Request(s) submitted for Madrasa Admin approval")
                 return redirect(reverse('parent_home'))
             except Exception:
                 logger.exception('Unhandled error in parent_link_kid')
-                messages.error(request, "Could not submit - you may have already requested this student.")
+                messages.error(request, "Could not submit - you may have already requested one of these students.")
         else:
             messages.error(request, "Please fill the form properly")
     return render(request, "parent_template/parent_link_kid.html", context)
