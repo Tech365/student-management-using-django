@@ -11,10 +11,11 @@ from django.urls import reverse
 from .forms import FeedbackStaffForm, LeaveReportStaffForm, StaffEditForm
 from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      FeedbackStaff, LeaveReportStaff, LeaveReportStudent,
-                     NotificationStaff, NotificationStudent, Session, Staff,
+                     NotificationStaff, Session, Staff,
                      Student, StudentResult, Subject)
-from .utils import (leave_decision_message, paginate, send_notification_email,
-                    session_course_ids_map, teacher_course_ids)
+from .utils import (notify_student_leave_decision, paginate,
+                    send_notification_email, session_course_ids_map,
+                    teacher_course_ids)
 
 logger = logging.getLogger(__name__)
 
@@ -297,9 +298,7 @@ def staff_view_student_leave(request):
                 return HttpResponse(False)
             leave.status = status
             leave.save()
-            message = leave_decision_message(leave.date, status)
-            NotificationStudent.objects.create(student=leave.student, message=message)
-            send_notification_email(leave.student.admin, message)
+            notify_student_leave_decision(leave, status)
             return HttpResponse(True)
         except Exception:
             logger.exception("Failed to update student leave status")

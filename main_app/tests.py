@@ -12,9 +12,9 @@ from PIL import Image
 from .forms import StaffForm
 from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      CustomUser, LeaveReportStaff, LeaveReportStudent,
-                     NotificationStaff, NotificationStudent, Parent,
-                     ParentStudentLink, Session, Staff, Student,
-                     StudentResult, Subject)
+                     NotificationParent, NotificationStaff,
+                     NotificationStudent, Parent, ParentStudentLink, Session,
+                     Staff, Student, StudentResult, Subject)
 
 PASSWORD = "pass1234"
 
@@ -1633,3 +1633,115 @@ class ParentFeatureTests(TestCase):
         response = self.client.get(reverse('delete_parent', args=[parent.id]))
         self.assertEqual(response.status_code, 302)
         self.assertFalse(CustomUser.objects.filter(email="new_parent@example.com").exists())
+
+
+class ParentNotificationTests(TestCase):
+    """Regression coverage for the notification gaps: link decisions and
+    leave decisions used to only ever email a parent (nothing showed up
+    in their in-app inbox), and there was no way for an HOD to broadcast
+    a notification to parents the way they already could to staff/students."""
+
+    def setUp(self):
+        self.admin_user = make_admin("notif_admin@example.com")
+        self.course = make_course("Notif Course")
+        self.session = make_session()
+        self.student = make_student("notif_kid@example.com", self.course, self.session)
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('parent_register'), {
+            'first_name': 'Notif', 'last_name': 'Parent', 'email': 'notif_parent@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
+        })
+        self.client.logout()
+        self.parent = Parent.objects.get(admin__email='notif_parent@example.com')
+        self.link = ParentStudentLink.objects.get(parent=self.parent, student=self.student)
+
+    def test_link_approval_creates_in_app_notification(self):
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_parent_link_requests'), {'id': self.link.id, 'status': '1'})
+        self.assertTrue(NotificationParent.objects.filter(parent=self.parent, is_read=False).exists())
+
+    def test_link_rejection_creates_in_app_notification(self):
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_parent_link_requests'), {'id': self.link.id, 'status': '-1'})
+        note = NotificationParent.objects.get(parent=self.parent)
+        self.assertIn('rejected', note.message)
+
+    def test_parent_notification_page_marks_read(self):
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_parent_link_requests'), {'id': self.link.id, 'status': '1'})
+        self.client.logout()
+
+        self.client.login(username="notif_parent@example.com", password=PASSWORD)
+        response = self.client.get(reverse('parent_view_notification'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'approved')
+        self.assertFalse(NotificationParent.objects.filter(parent=self.parent, is_read=False).exists())
+
+    def test_leave_decided_by_admin_notifies_applying_parent(self):
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_parent_link_requests'), {'id': self.link.id, 'status': '1'})
+        self.client.logout()
+
+        self.client.login(username="notif_parent@example.com", password=PASSWORD)
+        self.client.post(reverse('parent_apply_leave'), {
+            'student': self.student.id, 'date': '2024-06-01', 'message': 'Family trip',
+        })
+        leave = LeaveReportStudent.objects.get(student=self.student)
+        self.assertEqual(leave.applied_by_parent, self.parent)
+        self.client.logout()
+
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '1'})
+        self.assertTrue(NotificationParent.objects.filter(parent=self.parent).exists())
+        self.assertTrue(NotificationStudent.objects.filter(student=self.student).exists())
+
+    def test_leave_decided_by_staff_notifies_applying_parent(self):
+        teacher = make_staff("notif_teacher@example.com", self.course)
+        Subject.objects.create(name="Notif Subject", staff=teacher, course=self.course)
+
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_parent_link_requests'), {'id': self.link.id, 'status': '1'})
+        self.client.logout()
+
+        self.client.login(username="notif_parent@example.com", password=PASSWORD)
+        self.client.post(reverse('parent_apply_leave'), {
+            'student': self.student.id, 'date': '2024-06-01', 'message': 'Family trip',
+        })
+        leave = LeaveReportStudent.objects.get(student=self.student)
+        self.client.logout()
+
+        self.client.login(username="notif_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('staff_view_student_leave'), {'id': leave.id, 'status': '1'})
+        self.assertEqual(response.content, b'True')
+        self.assertTrue(NotificationParent.objects.filter(parent=self.parent).exists())
+
+    def test_admin_notify_parent_broadcast(self):
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('admin_notify_parent'))
+        self.assertContains(response, 'notif_parent@example.com')
+
+        response = self.client.post(reverse('send_parent_notification'), {
+            'id': self.parent.admin.id, 'message': 'Reminder: PTA meeting Friday',
+        })
+        self.assertEqual(response.content, b'True')
+        self.assertTrue(NotificationParent.objects.filter(
+            parent=self.parent, message='Reminder: PTA meeting Friday').exists())
+
+    def test_direct_student_leave_without_parent_is_unaffected(self):
+        """A student applying for their own leave (no parent involved)
+        must not error out or create a stray NotificationParent."""
+        student_user = self.student.admin
+        self.client.login(username=student_user.email, password=PASSWORD)
+        self.client.post(reverse('student_apply_leave'), {'date': '2024-07-01', 'message': 'Sick'})
+        leave = LeaveReportStudent.objects.get(student=self.student, date='2024-07-01')
+        self.assertIsNone(leave.applied_by_parent)
+        self.client.logout()
+
+        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '1'})
+        self.assertEqual(response.content, b'True')
+        self.assertFalse(NotificationParent.objects.exists())

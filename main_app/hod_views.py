@@ -19,11 +19,13 @@ from .forms import (AdminForm, CourseForm, CSVUploadForm, ParentEditForm,
                     SessionForm, StaffForm, StudentForm, SubjectForm)
 from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      CustomUser, FeedbackStaff, FeedbackStudent,
-                     LeaveReportStaff, LeaveReportStudent, NotificationStaff,
-                     NotificationStudent, Parent, ParentStudentLink, Session,
-                     Staff, Student, StudentResult, Subject)
+                     LeaveReportStaff, LeaveReportStudent, NotificationParent,
+                     NotificationStaff, NotificationStudent, Parent,
+                     ParentStudentLink, Session, Staff, Student,
+                     StudentResult, Subject)
 from .utils import (csv_response, leave_decision_message, log_action,
-                    paginate, parent_link_decision_message, read_csv_rows,
+                    notify_student_leave_decision, paginate,
+                    parent_link_decision_message, read_csv_rows,
                     send_notification_email, session_course_ids_map,
                     staff_class_names_map)
 
@@ -44,6 +46,7 @@ def admin_home(request):
         LeaveReportStudent.objects.filter(status=0).count()
         + LeaveReportStaff.objects.filter(status=0).count()
     )
+    total_pending_parent_links = ParentStudentLink.objects.filter(status=0).count()
     attendance_counts = dict(
         Attendance.objects.filter(subject__in=subjects)
         .values_list('subject').annotate(count=Count('id'))
@@ -57,6 +60,7 @@ def admin_home(request):
         'total_course': total_course,
         'total_subject': total_subject,
         'total_pending_leave': total_pending_leave,
+        'total_pending_parent_links': total_pending_parent_links,
         'subject_list': subject_list,
         'attendance_list': attendance_list
 
@@ -911,9 +915,7 @@ def view_student_leave(request):
                 return HttpResponse(False)
             leave.status = status
             leave.save()
-            message = leave_decision_message(leave.date, status)
-            NotificationStudent.objects.create(student=leave.student, message=message)
-            send_notification_email(leave.student.admin, message)
+            notify_student_leave_decision(leave, status)
             return HttpResponse(True)
         except Exception as e:
             logger.exception("Failed to update student leave status")
@@ -947,6 +949,7 @@ def view_parent_link_requests(request):
                 link.student.date_of_birth = link.date_of_birth
                 link.student.save()
             message = parent_link_decision_message(link.student, status)
+            NotificationParent.objects.create(parent=link.parent, message=message)
             send_notification_email(link.parent.admin, message)
             log_action(request, 'approved' if status == 1 else 'rejected', 'ParentStudentLink', link)
             return HttpResponse(True)
@@ -1061,6 +1064,20 @@ def admin_notify_student(request):
     return render(request, "hod_template/student_notification.html", context)
 
 
+def admin_notify_parent(request):
+    parents = CustomUser.objects.filter(user_type=4).select_related('parent')
+    links_by_parent = {}
+    for link in ParentStudentLink.objects.filter(parent__admin__in=parents, status=1).select_related('student__admin'):
+        links_by_parent.setdefault(link.parent_id, []).append(link)
+    for user in parents:
+        user.links = links_by_parent.get(user.parent.id, [])
+    context = {
+        'page_title': "Send Notifications To Parents",
+        'parents': parents
+    }
+    return render(request, "hod_template/parent_notification.html", context)
+
+
 def send_student_notification(request):
     id = request.POST.get('id')
     message = request.POST.get('message')
@@ -1085,6 +1102,33 @@ def send_student_notification(request):
         return HttpResponse("True")
     except Exception as e:
         logger.exception('Unhandled error in send_student_notification')
+        return HttpResponse("False")
+
+
+def send_parent_notification(request):
+    id = request.POST.get('id')
+    message = request.POST.get('message')
+    parent = get_object_or_404(Parent, admin_id=id)
+    try:
+        url = "https://fcm.googleapis.com/fcm/send"
+        body = {
+            'notification': {
+                'title': "Student Management System",
+                'body': message,
+                'click_action': reverse('parent_view_notification'),
+                'icon': static('dist/img/AdminLTELogo.png')
+            },
+            'to': parent.admin.fcm_token
+        }
+        headers = {'Authorization': 'key=' + settings.FCM_SERVER_KEY,
+                   'Content-Type': 'application/json'}
+        data = requests.post(url, data=json.dumps(body), headers=headers)
+        notification = NotificationParent(parent=parent, message=message)
+        notification.save()
+        send_notification_email(parent.admin, message)
+        return HttpResponse("True")
+    except Exception as e:
+        logger.exception('Unhandled error in send_parent_notification')
         return HttpResponse("False")
 
 

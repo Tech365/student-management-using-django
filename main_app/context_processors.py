@@ -1,4 +1,4 @@
-from .models import NotificationStaff, NotificationStudent
+from .models import NotificationParent, NotificationStaff, NotificationStudent
 
 
 def unread_notifications(request):
@@ -10,6 +10,8 @@ def unread_notifications(request):
         count = NotificationStaff.objects.filter(staff__admin=user, is_read=False).count()
     elif user.user_type == '3':
         count = NotificationStudent.objects.filter(student__admin=user, is_read=False).count()
+    elif user.user_type == '4':
+        count = NotificationParent.objects.filter(parent__admin=user, is_read=False).count()
     else:
         count = 0
 

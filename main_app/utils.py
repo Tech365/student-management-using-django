@@ -75,6 +75,20 @@ def parent_link_decision_message(student, status):
     return f"Your request to link with {student} was {verdict}."
 
 
+def notify_student_leave_decision(leave, status):
+    """Notify a decided-on student leave application: always the
+    student's own account, and - if a parent submitted it on the
+    student's behalf (parent_apply_leave) - that parent too, so they
+    aren't left to find out only by asking their kid."""
+    from .models import NotificationParent, NotificationStudent
+    message = leave_decision_message(leave.date, status)
+    NotificationStudent.objects.create(student=leave.student, message=message)
+    send_notification_email(leave.student.admin, message)
+    if leave.applied_by_parent_id:
+        NotificationParent.objects.create(parent=leave.applied_by_parent, message=message)
+        send_notification_email(leave.applied_by_parent.admin, message)
+
+
 def teacher_course_ids(staff):
     """IDs of every course `staff` teaches at least one subject in.
 

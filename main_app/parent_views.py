@@ -12,8 +12,8 @@ from django.urls import reverse
 from .forms import (LeaveReportStudentForm, ParentEditForm,
                     ParentLinkRequestFormSet, ParentRegistrationForm)
 from .models import (Attendance, AttendanceReport, Course, CustomUser,
-                     LeaveReportStudent, NotificationStaff, Parent,
-                     ParentStudentLink, Staff, Student, Subject)
+                     LeaveReportStudent, NotificationParent, NotificationStaff,
+                     Parent, ParentStudentLink, Staff, Student, Subject)
 from .utils import log_action, parent_can_access_student, send_notification_email
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
@@ -89,6 +89,17 @@ def get_students_for_registration(request):
     except Exception as e:
         logger.exception("Failed to fetch students for parent registration")
         return JsonResponse({'error': str(e)}, status=400)
+
+
+def parent_view_notification(request):
+    parent = get_object_or_404(Parent, admin=request.user)
+    notifications = list(NotificationParent.objects.filter(parent=parent))
+    context = {
+        'notifications': notifications,
+        'page_title': "View Notifications"
+    }
+    NotificationParent.objects.filter(parent=parent, is_read=False).update(is_read=True)
+    return render(request, "parent_template/parent_view_notification.html", context)
 
 
 def parent_home(request):
@@ -245,6 +256,7 @@ def parent_apply_leave(request):
             try:
                 obj = form.save(commit=False)
                 obj.student = target_student
+                obj.applied_by_parent = parent
                 obj.save()
                 message = f"{target_student} applied for leave on {obj.date}: {obj.message} (submitted by parent)"
                 # Same "every teacher of this class" fan-out student_apply_leave uses -

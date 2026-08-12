@@ -168,6 +168,10 @@ class LeaveReportStudent(models.Model):
     status = models.SmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Set only when a parent submitted this on the student's behalf
+    # (parent_apply_leave) - lets the decision views also notify the
+    # parent who applied, not just the student's own account.
+    applied_by_parent = models.ForeignKey(Parent, on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class LeaveReportStaff(models.Model):
@@ -208,6 +212,17 @@ class NotificationStaff(models.Model):
 
 class NotificationStudent(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class NotificationParent(models.Model):
+    parent = models.ForeignKey(Parent, on_delete=models.CASCADE)
     message = models.TextField()
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

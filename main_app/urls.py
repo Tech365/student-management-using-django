@@ -41,6 +41,10 @@ urlpatterns = [
          name='admin_notify_student'),
     path("admin_notify_staff", hod_views.admin_notify_staff,
          name='admin_notify_staff'),
+    path("admin_notify_parent", hod_views.admin_notify_parent,
+         name='admin_notify_parent'),
+    path("send_parent_notification/", hod_views.send_parent_notification,
+         name='send_parent_notification'),
     path("admin_view_profile", hod_views.admin_view_profile,
          name='admin_view_profile'),
     path("check_email_availability", hod_views.check_email_availability,
@@ -168,6 +172,8 @@ urlpatterns = [
          name='parent_view_attendance'),
     path("parent/apply/leave/", parent_views.parent_apply_leave,
          name='parent_apply_leave'),
+    path("parent/view/notification/", parent_views.parent_view_notification,
+         name="parent_view_notification"),
 
     # Reports
     path("reports/attendance/", hod_views.report_attendance_summary,
