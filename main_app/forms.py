@@ -10,6 +10,7 @@ from .models import *
 
 ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
 MAX_PROFILE_PIC_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_PENDING_LINKS_PER_STUDENT = 3
 
 
 class FormSettings(forms.ModelForm):
@@ -277,6 +278,19 @@ class ParentLinkRequestForm(forms.Form):
             if dob < date.today() - timedelta(days=120 * 365):
                 raise forms.ValidationError("Please enter a valid date of birth.")
         return dob
+
+    def clean_student(self):
+        # Caps how many *pending* requests a single student can accumulate
+        # at once, regardless of which parent is asking - without this,
+        # nothing stopped scripted registrations from flooding the
+        # approval queue with fake claims on the same kid (rate limiting
+        # on parent_register slows that down, but doesn't cap it).
+        student = self.cleaned_data.get('student')
+        if student and ParentStudentLink.objects.filter(student=student, status=0).count() >= MAX_PENDING_LINKS_PER_STUDENT:
+            raise forms.ValidationError(
+                "This student already has the maximum number of pending link "
+                "requests. Please contact the school directly.")
+        return student
 
 
 # A parent can have more than one kid at the school, so both registration

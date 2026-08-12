@@ -1954,3 +1954,82 @@ class UXImprovementTests(TestCase):
         response = self.client.get(reverse('view_parent_link_requests'))
         self.assertNotContains(response, 'Also requested by another parent')
         self.assertFalse(NotificationParent.objects.exists())
+
+
+class ParentLinkRequestCapTests(TestCase):
+    """A student can only have MAX_PENDING_LINKS_PER_STUDENT pending
+    requests at once, regardless of which parent is asking - otherwise
+    nothing bounds how many fake accounts can pile pending requests onto
+    the same kid."""
+
+    def setUp(self):
+        cache.clear()  # rate_limited()'s counters live outside the DB, so the per-test rollback doesn't reset them
+        self.admin_user = make_admin("cap_admin@example.com")
+        self.course = make_course("Cap Course")
+        self.session = make_session()
+        self.student = make_student("cap_kid@example.com", self.course, self.session)
+
+    def _register(self, email):
+        return self.client.post(reverse('parent_register'), {
+            'first_name': 'P', 'last_name': 'Arent', 'email': email,
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
+        })
+
+    def test_pending_requests_capped_per_student(self):
+        for i in range(3):
+            response = self._register(f'cap_parent_{i}@example.com')
+            self.assertEqual(response.status_code, 302, f"request {i} should have been accepted")
+        self.assertEqual(ParentStudentLink.objects.filter(student=self.student, status=0).count(), 3)
+
+        # A 4th pending request for the same student should be rejected.
+        response = self._register('cap_parent_overflow@example.com')
+        self.assertEqual(response.status_code, 200)  # re-rendered with a validation error
+        self.assertFalse(CustomUser.objects.filter(email='cap_parent_overflow@example.com').exists())
+        self.assertEqual(ParentStudentLink.objects.filter(student=self.student, status=0).count(), 3)
+
+    def test_approving_one_frees_up_capacity(self):
+        for i in range(3):
+            self._register(f'cap_parent_{i}@example.com')
+        self.client.login(username="cap_admin@example.com", password=PASSWORD)
+        link = ParentStudentLink.objects.filter(student=self.student, status=0).first()
+        self.client.post(reverse('view_parent_link_requests'), {'id': link.id, 'status': '1'})
+        self.client.logout()
+
+        # Only 2 pending remain now, so a new request should succeed.
+        response = self._register('cap_parent_after_approval@example.com')
+        self.assertEqual(response.status_code, 302)
+
+
+class DjangoAdminCompatibilityTests(TestCase):
+    """Regression test: Django's own /admin/ "Add user"/"Change user"
+    pages 500'd (FieldError: Unknown field(s) (username)) because
+    CustomUser has no username field and USER_TYPE's choice keys didn't
+    match the CharField's actual (string) values."""
+
+    def setUp(self):
+        self.superuser = CustomUser.objects.create_superuser(
+            email="dj_admin_super@example.com", password=PASSWORD, user_type=1,
+            first_name="Super", last_name="User")
+        self.client.login(username="dj_admin_super@example.com", password=PASSWORD)
+
+    def test_add_user_page_loads(self):
+        response = self.client.get('/admin/main_app/customuser/add/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_add_user_via_admin_succeeds(self):
+        response = self.client.post('/admin/main_app/customuser/add/', {
+            'email': 'dj_admin_created@example.com',
+            'first_name': 'DJ', 'last_name': 'Created',
+            'user_type': '1', 'gender': 'M', 'address': 'addr',
+            'password1': 'Xk7pQr29Zt!8', 'password2': 'Xk7pQr29Zt!8',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(CustomUser.objects.filter(email='dj_admin_created@example.com').exists())
+
+    def test_change_user_page_loads_and_saves(self):
+        response = self.client.get(f'/admin/main_app/customuser/{self.superuser.id}/change/')
+        self.assertEqual(response.status_code, 200)

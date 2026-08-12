@@ -39,13 +39,20 @@ class Session(models.Model):
 
 
 class CustomUser(AbstractUser):
-    USER_TYPE = ((1, "HOD"), (2, "Staff"), (3, "Student"), (4, "Parent"))
+    # Keys are strings, not ints: user_type is a CharField, and every
+    # comparison across the app (middleware, views, templates) already
+    # treats it as one ('1', '2', ...). Int keys here only ever caused
+    # main_app.models.Field.validate() to reject a freshly-created user
+    # ('1' != 1) the moment something ran real ModelForm validation
+    # against it - which none of this app's own forms do (they bypass
+    # full_clean() entirely), but the Django admin's stock UserAdmin does.
+    USER_TYPE = (("1", "HOD"), ("2", "Staff"), ("3", "Student"), ("4", "Parent"))
     GENDER = [("M", "Male"), ("F", "Female")]
-    
-    
+
+
     username = None  # Removed username, using email instead
     email = models.EmailField(unique=True)
-    user_type = models.CharField(default=1, choices=USER_TYPE, max_length=1)
+    user_type = models.CharField(default="1", choices=USER_TYPE, max_length=1)
     gender = models.CharField(max_length=1, choices=GENDER)
     profile_pic = models.ImageField()
     address = models.TextField()
