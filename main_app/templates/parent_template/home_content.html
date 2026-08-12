@@ -1,0 +1,66 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">Your Kids</h3>
+                        <div class="card-tools">
+                            <a href="{% url 'parent_link_kid' %}" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-user-plus"></i> Link Another Kid
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        {% if not links %}
+                        <p class="text-muted">You haven't requested to link any children yet.</p>
+                        {% else %}
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Class</th>
+                                    <th>Relationship</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for link in links %}
+                                <tr>
+                                    <td>{{ link.student.admin.last_name }}, {{ link.student.admin.first_name }}</td>
+                                    <td>{{ link.student.course.name }}</td>
+                                    <td>{{ link.get_relationship_display }}</td>
+                                    <td>
+                                        {% if link.status == 1 %}
+                                        <span class="badge badge-success">Approved</span>
+                                        {% elif link.status == -1 %}
+                                        <span class="badge badge-danger">Rejected</span>
+                                        {% else %}
+                                        <span class="badge badge-warning">Pending admin review</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if link.status == 1 %}
+                                        <a href="{% url 'parent_view_attendance' %}?student={{ link.student.id }}" class="btn btn-primary btn-sm">Attendance</a>
+                                        <a href="{% url 'parent_apply_leave' %}?student={{ link.student.id }}" class="btn btn-secondary btn-sm">Apply Leave</a>
+                                        {% else %}
+                                        <span class="text-muted">&mdash;</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

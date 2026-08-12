@@ -12,18 +12,20 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.crypto import get_random_string
 
-from .forms import (AdminForm, CourseForm, CSVUploadForm, SessionForm,
-                    StaffForm, StudentForm, SubjectForm)
+from .forms import (AdminForm, CourseForm, CSVUploadForm, ParentEditForm,
+                    SessionForm, StaffForm, StudentForm, SubjectForm)
 from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      CustomUser, FeedbackStaff, FeedbackStudent,
                      LeaveReportStaff, LeaveReportStudent, NotificationStaff,
-                     NotificationStudent, Session, Staff, Student,
-                     StudentResult, Subject)
+                     NotificationStudent, Parent, ParentStudentLink, Session,
+                     Staff, Student, StudentResult, Subject)
 from .utils import (csv_response, leave_decision_message, log_action,
-                    paginate, read_csv_rows, send_notification_email,
-                    session_course_ids_map, staff_class_names_map)
+                    paginate, parent_link_decision_message, read_csv_rows,
+                    send_notification_email, session_course_ids_map,
+                    staff_class_names_map)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
@@ -410,6 +412,21 @@ def manage_admin(request):
     return render(request, "hod_template/manage_admin.html", context)
 
 
+def manage_parent(request):
+    parents = paginate(request, CustomUser.objects.filter(user_type=4).select_related('parent').order_by('id'))
+    links_by_parent = {}
+    for link in ParentStudentLink.objects.filter(parent__admin__in=parents).select_related('student__admin'):
+        links_by_parent.setdefault(link.parent_id, []).append(link)
+    for user in parents:
+        user.links = links_by_parent.get(user.parent.id, [])
+    context = {
+        'parents': parents,
+        'page_obj': parents,
+        'page_title': 'Manage Parents'
+    }
+    return render(request, "hod_template/manage_parent.html", context)
+
+
 def manage_staff(request):
     allStaff = paginate(request, CustomUser.objects.filter(user_type=2).select_related('staff').order_by('id'))
     classes_by_staff = staff_class_names_map([user.staff.id for user in allStaff])
@@ -620,6 +637,56 @@ def edit_admin(request, admin_id):
         return render(request, "hod_template/edit_admin_template.html", context)
     else:
         return render(request, "hod_template/edit_admin_template.html", context)
+
+
+def edit_parent(request, parent_id):
+    parent = get_object_or_404(Parent, id=parent_id)
+    form = ParentEditForm(request.POST or None, request.FILES or None, instance=parent)
+    context = {
+        'form': form,
+        'parent_id': parent_id,
+        'page_title': 'Edit Parent'
+    }
+    if request.method == 'POST':
+        if form.is_valid():
+            first_name = form.cleaned_data.get('first_name')
+            last_name = form.cleaned_data.get('last_name')
+            address = form.cleaned_data.get('address')
+            email = form.cleaned_data.get('email')
+            gender = form.cleaned_data.get('gender')
+            password = form.cleaned_data.get('password') or None
+            contact_number = form.cleaned_data.get('contact_number')
+            passport = request.FILES.get('profile_pic') or None
+            try:
+                user = CustomUser.objects.get(id=parent.admin.id)
+                user.email = email
+                if password is not None:
+                    user.set_password(password)
+                if passport is not None:
+                    fs = FileSystemStorage()
+                    filename = fs.save(passport.name, passport)
+                    passport_url = fs.url(filename)
+                    user.profile_pic = passport_url
+                user.first_name = first_name
+                user.last_name = last_name
+                user.gender = gender
+                user.address = address
+                user.save()
+                parent.contact_number = contact_number
+                parent.save()
+                if password is not None and user.id == request.user.id:
+                    update_session_auth_hash(request, user)
+                log_action(request, 'updated', 'Parent', user)
+                messages.success(request, "Successfully Updated")
+                return redirect(reverse('edit_parent', args=[parent_id]))
+            except Exception as e:
+                logger.exception('Unhandled error in edit_parent')
+                messages.error(request, "Could Not Update " + str(e))
+        else:
+            messages.error(request, "Please fill the form properly")
+        return render(request, "hod_template/edit_parent_template.html", context)
+    else:
+        return render(request, "hod_template/edit_parent_template.html", context)
 
 
 def edit_course(request, course_id):
@@ -853,6 +920,41 @@ def view_student_leave(request):
             return HttpResponse(False)
 
 
+def view_parent_link_requests(request):
+    if request.method != 'POST':
+        allLinks = paginate(request, ParentStudentLink.objects.select_related(
+            'parent__admin', 'student__admin').order_by('id'))
+        context = {
+            'allLinks': allLinks,
+            'page_obj': allLinks,
+            'page_title': 'Parent Link Requests'
+        }
+        return render(request, "hod_template/parent_link_view.html", context)
+    else:
+        id = request.POST.get('id')
+        status = request.POST.get('status')
+        status = 1 if status == '1' else -1
+        try:
+            link = get_object_or_404(ParentStudentLink, id=id)
+            if link.status != 0:
+                # Already decided - don't overwrite or send a duplicate notification.
+                return HttpResponse(False)
+            link.status = status
+            link.decided_at = timezone.now()
+            link.decided_by = request.user
+            link.save()
+            if status == 1 and not link.student.date_of_birth:
+                link.student.date_of_birth = link.date_of_birth
+                link.student.save()
+            message = parent_link_decision_message(link.student, status)
+            send_notification_email(link.parent.admin, message)
+            log_action(request, 'approved' if status == 1 else 'rejected', 'ParentStudentLink', link)
+            return HttpResponse(True)
+        except Exception:
+            logger.exception("Failed to update parent link status")
+            return HttpResponse(False)
+
+
 def admin_view_attendance(request):
     courses = Course.objects.order_by('name')
     subjects = Subject.objects.select_related('course').order_by('course__name', 'name')
@@ -1060,6 +1162,29 @@ def delete_admin(request, admin_id):
         logger.exception('Unhandled error in delete_admin')
         messages.error(request, "Could not delete this admin.")
     return redirect(reverse('manage_admin'))
+
+
+def toggle_parent_status(request, parent_id):
+    parent_user = get_object_or_404(CustomUser, parent__id=parent_id)
+    parent_user.is_active = not parent_user.is_active
+    parent_user.save()
+    log_action(request, 'activated' if parent_user.is_active else 'deactivated', 'Parent', parent_user)
+    messages.success(
+        request, f"Parent {'activated' if parent_user.is_active else 'deactivated'} successfully!")
+    return redirect(reverse('manage_parent'))
+
+
+def delete_parent(request, parent_id):
+    parent_user = get_object_or_404(CustomUser, parent__id=parent_id)
+    try:
+        parent_repr = str(parent_user)
+        parent_user.delete()
+        log_action(request, 'deleted', 'Parent', parent_repr)
+        messages.success(request, "Parent deleted successfully!")
+    except Exception:
+        logger.exception('Unhandled error in delete_parent')
+        messages.error(request, "Could not delete this parent.")
+    return redirect(reverse('manage_parent'))
 
 
 def delete_staff(request, staff_id):

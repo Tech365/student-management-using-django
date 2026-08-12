@@ -12,8 +12,9 @@ from PIL import Image
 from .forms import StaffForm
 from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      CustomUser, LeaveReportStaff, LeaveReportStudent,
-                     NotificationStaff, NotificationStudent, Session, Staff,
-                     Student, StudentResult, Subject)
+                     NotificationStaff, NotificationStudent, Parent,
+                     ParentStudentLink, Session, Staff, Student,
+                     StudentResult, Subject)
 
 PASSWORD = "pass1234"
 
@@ -1457,3 +1458,139 @@ class EditUserCredentialsTests(TestCase):
         response = self.client.get(reverse('delete_admin', args=[actor.admin.id]))
         self.assertEqual(response.status_code, 302)
         self.assertTrue(CustomUser.objects.filter(email="creds_admin@example.com").exists())
+
+
+class ParentFeatureTests(TestCase):
+    def setUp(self):
+        self.admin_user = make_admin("parent_feature_admin@example.com")
+        self.course = make_course("Parent Feature Course")
+        self.session = make_session()
+        self.student = make_student("parent_feature_kid@example.com", self.course, self.session)
+
+    def _register_parent(self, email="new_parent@example.com", student=None):
+        student = student or self.student
+        return self.client.post(reverse('parent_register'), {
+            'first_name': 'New', 'last_name': 'Parent', 'email': email,
+            'gender': 'M', 'address': '1 Test St', 'password': PASSWORD,
+            'contact_number': '5551234',
+            'course': self.course.id, 'student': student.id,
+            'relationship': 'father', 'date_of_birth': '2015-01-01',
+        })
+
+    def test_registration_creates_pending_link_and_active_account(self):
+        response = self._register_parent()
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email="new_parent@example.com")
+        self.assertEqual(str(user.user_type), '4')
+        self.assertTrue(user.is_active)
+        link = ParentStudentLink.objects.get(parent=user.parent, student=self.student)
+        self.assertEqual(link.status, 0)
+
+    def test_parent_can_log_in_immediately_after_registering(self):
+        self._register_parent()
+        self.assertIsNotNone(authenticate(username="new_parent@example.com", password=PASSWORD))
+
+    def test_pending_link_grants_no_attendance_or_leave_access(self):
+        self._register_parent()
+        self.client.login(username="new_parent@example.com", password=PASSWORD)
+        response = self.client.post(reverse('parent_view_attendance'), {
+            'student': self.student.id, 'subject': 1,
+            'start_date': '2024-01-01', 'end_date': '2024-01-31',
+        })
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_approval_grants_access_and_backfills_dob(self):
+        self._register_parent()
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        link = ParentStudentLink.objects.get(student=self.student)
+        response = self.client.post(reverse('view_parent_link_requests'), {'id': link.id, 'status': '1'})
+        self.assertEqual(response.content, b'True')
+        link.refresh_from_db()
+        self.assertEqual(link.status, 1)
+        self.student.refresh_from_db()
+        self.assertEqual(str(self.student.date_of_birth), '2015-01-01')
+
+        self.client.logout()
+        self.client.login(username="new_parent@example.com", password=PASSWORD)
+        response = self.client.get(reverse('parent_home'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Approved')
+
+    def test_approved_dob_is_not_overwritten_by_a_second_link(self):
+        self._register_parent()
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        link = ParentStudentLink.objects.get(student=self.student)
+        self.client.post(reverse('view_parent_link_requests'), {'id': link.id, 'status': '1'})
+        self.client.logout()
+
+        # A second parent submits a different (mistaken) DOB for the same kid.
+        self._register_parent(email="second_parent@example.com")
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        second_link = ParentStudentLink.objects.get(parent__admin__email="second_parent@example.com")
+        self.client.post(reverse('view_parent_link_requests'), {'id': second_link.id, 'status': '1'})
+        self.student.refresh_from_db()
+        self.assertEqual(str(self.student.date_of_birth), '2015-01-01')
+
+    def test_parent_cannot_access_a_student_without_an_approved_link(self):
+        other_student = make_student("other_kid@example.com", self.course, self.session)
+        self._register_parent()  # links to self.student only
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        link = ParentStudentLink.objects.get(student=self.student)
+        self.client.post(reverse('view_parent_link_requests'), {'id': link.id, 'status': '1'})
+        self.client.logout()
+
+        self.client.login(username="new_parent@example.com", password=PASSWORD)
+        response = self.client.post(reverse('parent_view_attendance'), {
+            'student': other_student.id, 'subject': 1,
+            'start_date': '2024-01-01', 'end_date': '2024-01-31',
+        })
+        self.assertEqual(response.status_code, 404)
+
+    def test_parent_apply_leave_notifies_class_teachers(self):
+        teacher = make_staff("parent_feature_teacher@example.com", self.course)
+        Subject.objects.create(name="Parent Feature Subject", staff=teacher, course=self.course)
+        self._register_parent()
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        link = ParentStudentLink.objects.get(student=self.student)
+        self.client.post(reverse('view_parent_link_requests'), {'id': link.id, 'status': '1'})
+        self.client.logout()
+
+        self.client.login(username="new_parent@example.com", password=PASSWORD)
+        response = self.client.post(reverse('parent_apply_leave'), {
+            'student': self.student.id, 'date': '2024-06-01', 'message': 'Family trip',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(LeaveReportStudent.objects.filter(student=self.student, message='Family trip').exists())
+        self.assertTrue(NotificationStaff.objects.filter(staff=teacher).exists())
+
+    def test_middleware_blocks_parent_from_other_role_views(self):
+        self._register_parent()
+        self.client.login(username="new_parent@example.com", password=PASSWORD)
+        response = self.client.get(reverse('manage_student'))
+        self.assertRedirects(response, reverse('parent_home'))
+
+    def test_manage_parent_lists_registered_parent(self):
+        self._register_parent()
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('manage_parent'))
+        self.assertContains(response, 'new_parent@example.com')
+
+    def test_edit_parent_updates_email_and_password(self):
+        self._register_parent()
+        parent = Parent.objects.get(admin__email="new_parent@example.com")
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('edit_parent', args=[parent.id]), {
+            'first_name': 'New', 'last_name': 'Parent', 'email': 'updated_parent@example.com',
+            'gender': 'M', 'address': '1 Test St', 'contact_number': '5559999',
+            'password': 'BrandNewPass1',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(authenticate(username='updated_parent@example.com', password='BrandNewPass1'))
+
+    def test_delete_parent(self):
+        self._register_parent()
+        parent = Parent.objects.get(admin__email="new_parent@example.com")
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('delete_parent', args=[parent.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(CustomUser.objects.filter(email="new_parent@example.com").exists())

@@ -69,6 +69,12 @@ def leave_decision_message(leave_date, status):
     return f"Your leave application for {leave_date} was {verdict}."
 
 
+def parent_link_decision_message(student, status):
+    """Message text for a parent-student link approve/reject decision."""
+    verdict = "approved" if status == 1 else "rejected"
+    return f"Your request to link with {student} was {verdict}."
+
+
 def teacher_course_ids(staff):
     """IDs of every course `staff` teaches at least one subject in.
 
@@ -91,6 +97,18 @@ def staff_class_names_map(staff_ids):
     for subject in Subject.objects.filter(staff_id__in=staff_ids).select_related('course'):
         by_staff.setdefault(subject.staff_id, set()).add(subject.course.name)
     return {staff_id: ', '.join(sorted(names)) for staff_id, names in by_staff.items()}
+
+
+def parent_can_access_student(parent, student_id):
+    """The Student `parent` has an approved link to, or None.
+
+    A parent can only view attendance/apply leave for a kid once an admin
+    has approved that specific link - pending/rejected links (and links
+    belonging to a different parent entirely) must not grant access."""
+    from .models import ParentStudentLink
+    link = ParentStudentLink.objects.filter(
+        parent=parent, student_id=student_id, status=1).select_related('student').first()
+    return link.student if link else None
 
 
 def session_course_ids_map():

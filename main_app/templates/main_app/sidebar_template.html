@@ -88,6 +88,15 @@
                         <p>Manage Student</p>
                     </a>
                 </li>
+                <li class="nav-item">
+                    {% url 'manage_parent' as manage_parent %}
+                    {% url 'edit_parent' parent_id as edit_parent %}
+                    <a href="{{manage_parent}}"
+                        class="nav-link {% if edit_parent == request.path or manage_parent == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-friends text-primary"></i>
+                        <p>Manage Parents</p>
+                    </a>
+                </li>
 
                 <li class="nav-header">ACADEMICS</li>
                 <li class="nav-item">
@@ -175,6 +184,13 @@
                     <a href="{{ student_feedback_message }}" class="nav-link {% if student_feedback_message == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-comment-dots text-pink"></i>
                         <p>Student Feedback</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'view_parent_link_requests' as view_parent_link_requests %}
+                    <a href="{{view_parent_link_requests}}" class="nav-link {% if view_parent_link_requests == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-friends text-purple"></i>
+                        <p>Parent Link Requests</p>
                     </a>
                 </li>
 
@@ -348,7 +364,7 @@
                     </a>
                 </li>
 
-{% else %}
+{% elif request.user.user_type == '3' %}
     <!-- Brand Logo -->
     <a href="" class="brand-link">
         <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
@@ -430,6 +446,70 @@
                     <a href="{{student_feedback}}" class="nav-link {% if student_feedback == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-comment-dots text-pink"></i>
                         <p>Feedback</p>
+                    </a>
+                </li>
+
+{% elif request.user.user_type == '4' %}
+    <!-- Brand Logo -->
+    <a href="" class="brand-link">
+        <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
+            class="brand-image img-circle elevation-3" style="opacity: .8">
+        <span class="brand-text font-weight-light">Parent Panel</span>
+    </a>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <!-- Sidebar user panel (optional) -->
+        <div class="user-panel mt-3 pb-3 mb-3 d-flex">
+            <div class="image">
+                <img src="{{ request.user.profile_pic}}" class="img-circle elevation-2" alt="User Image">
+            </div>
+            <div class="info">
+                <a href="#" class="d-block">{{user}}</a>
+            </div>
+        </div>
+
+        <!-- Sidebar Menu -->
+        <nav class="mt-2">
+            <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
+
+                <li class="nav-item">
+                    {% url 'parent_home' as parent_home %}
+                    <a href="{{parent_home}}" class="nav-link {% if parent_home == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-tachometer-alt"></i>
+                        <p>Home</p>
+                    </a>
+                </li>
+
+                <li class="nav-header">MY ACCOUNT</li>
+                <li class="nav-item">
+                    {% url 'parent_view_profile' as parent_view_profile %}
+                    <a href="{{parent_view_profile}}" class="nav-link {% if parent_view_profile == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-circle text-info"></i>
+                        <p>View/Edit Profile</p>
+                    </a>
+                </li>
+
+                <li class="nav-header">MY KIDS</li>
+                <li class="nav-item">
+                    {% url 'parent_link_kid' as parent_link_kid %}
+                    <a href="{{parent_link_kid}}" class="nav-link {% if parent_link_kid == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-plus text-primary"></i>
+                        <p>Link Another Kid</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'parent_view_attendance' as parent_view_attendance %}
+                    <a href="{{parent_view_attendance}}" class="nav-link {% if parent_view_attendance == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-clipboard-check text-success"></i>
+                        <p>View Attendance</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'parent_apply_leave' as parent_apply_leave %}
+                    <a href="{{parent_apply_leave}}" class="nav-link {% if parent_apply_leave == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-clock text-purple"></i>
+                        <p>Apply For Leave</p>
                     </a>
                 </li>
 

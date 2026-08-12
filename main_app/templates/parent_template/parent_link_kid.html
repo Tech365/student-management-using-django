@@ -1,0 +1,58 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    {% include "main_app/form_template.html" with messages=messages  form=form button_text="Submit for Approval"%}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
+
+{% block custom_js %}
+<script>
+    $(document).ready(function () {
+        function loadStudents(selected) {
+            var courseId = $('#id_course').val();
+            var $student = $('#id_student');
+            if (!courseId) {
+                $student.empty().append($('<option>', {value: '', text: '---------'}));
+                return;
+            }
+            $.ajax({
+                url: "{% url 'parent_register_get_students' %}",
+                type: 'POST',
+                data: {course: courseId, csrfmiddlewaretoken: '{{ csrf_token }}'}
+            }).done(function (response) {
+                var students = JSON.parse(response);
+                $student.empty();
+                if (students.length === 0) {
+                    $student.append($('<option>', {value: '', text: 'No students in this class'}));
+                    return;
+                }
+                $student.append($('<option>', {value: '', text: '---------'}));
+                $.each(students, function (i, s) {
+                    var opt = $('<option>', {value: s.id, text: s.name});
+                    if (selected && String(s.id) === String(selected)) { opt.prop('selected', true); }
+                    $student.append(opt);
+                });
+            }).fail(function () {
+                $student.empty().append($('<option>', {value: '', text: 'Could not load students'}));
+            });
+        }
+        var initialStudent = $('#id_student').val();
+        $('#id_course').on('change', function () { loadStudents(null); });
+        if ($('#id_course').val()) { loadStudents(initialStudent); }
+    });
+</script>
+{% endblock custom_js %}

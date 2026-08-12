@@ -39,7 +39,7 @@ class Session(models.Model):
 
 
 class CustomUser(AbstractUser):
-    USER_TYPE = ((1, "HOD"), (2, "Staff"), (3, "Student"))
+    USER_TYPE = ((1, "HOD"), (2, "Staff"), (3, "Student"), (4, "Parent"))
     GENDER = [("M", "Male"), ("F", "Female")]
     
     
@@ -80,6 +80,10 @@ class Student(models.Model):
     # enrolled in it, rather than silently orphaning or deleting them.
     course = models.ForeignKey(Course, on_delete=models.PROTECT, null=True, blank=False)
     session = models.ForeignKey(Session, on_delete=models.PROTECT, null=True)
+    # Filled in automatically the first time a parent's link request to this
+    # student is approved (see ParentStudentLink) - not collected anywhere
+    # else, so it stays null until then.
+    date_of_birth = models.DateField(null=True, blank=True)
 
     def __str__(self):
         return self.admin.last_name + ", " + self.admin.first_name
@@ -91,6 +95,38 @@ class Staff(models.Model):
 
     def __str__(self):
         return self.admin.last_name + " " + self.admin.first_name
+
+
+class Parent(models.Model):
+    admin = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    contact_number = models.CharField(max_length=20, default="")
+
+    def __str__(self):
+        return self.admin.last_name + ", " + self.admin.first_name
+
+
+class ParentStudentLink(models.Model):
+    RELATIONSHIP = [("mother", "Mother"), ("father", "Father"), ("guardian", "Guardian")]
+
+    parent = models.ForeignKey(Parent, on_delete=models.CASCADE)
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    relationship = models.CharField(max_length=10, choices=RELATIONSHIP)
+    # What the parent entered when requesting the link - kept for the
+    # admin's record even though it only backfills Student.date_of_birth
+    # once (see hod_views.view_parent_link_requests), so a second, possibly
+    # mistaken, submission never silently overwrites the first.
+    date_of_birth = models.DateField()
+    status = models.SmallIntegerField(default=0)  # 0 pending, 1 approved, -1 rejected
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True)
+    decided_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, related_name='+')
+
+    class Meta:
+        unique_together = ('parent', 'student')
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"{self.parent} -> {self.student}"
 
 
 class Subject(models.Model):
@@ -215,6 +251,8 @@ def create_user_profile(sender, instance, created, **kwargs):
             Staff.objects.create(admin=instance)
         if instance.user_type == 3:
             Student.objects.create(admin=instance)
+        if instance.user_type == 4:
+            Parent.objects.create(admin=instance)
 
 
 @receiver(post_save, sender=CustomUser)
@@ -225,3 +263,5 @@ def save_user_profile(sender, instance, **kwargs):
         instance.staff.save()
     if instance.user_type == 3:
         instance.student.save()
+    if instance.user_type == 4:
+        instance.parent.save()

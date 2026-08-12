@@ -185,6 +185,53 @@ class StaffEditForm(CustomUserForm):
         fields = CustomUserForm.Meta.fields
 
 
+class ParentRegistrationForm(CustomUserForm):
+    """Public self-registration - unlike every other role here, this
+    account isn't created by an HOD who'd have a photo on hand, so a
+    fresh photo is never required."""
+
+    def __init__(self, *args, **kwargs):
+        super(ParentRegistrationForm, self).__init__(*args, **kwargs)
+        self.fields['profile_pic'].required = False
+
+    class Meta(CustomUserForm.Meta):
+        model = Parent
+        fields = CustomUserForm.Meta.fields + ['contact_number']
+
+
+class ParentEditForm(CustomUserForm):
+    def __init__(self, *args, **kwargs):
+        super(ParentEditForm, self).__init__(*args, **kwargs)
+
+    class Meta(CustomUserForm.Meta):
+        model = Parent
+        fields = CustomUserForm.Meta.fields + ['contact_number']
+
+
+class ParentLinkRequestForm(forms.Form):
+    """Not a ModelForm - it writes to both Student (indirectly, via the
+    picked id) and ParentStudentLink, so there's no single model to bind
+    to the way FormSettings' other subclasses do."""
+
+    course = forms.ModelChoiceField(queryset=Course.objects.all(), label="Class")
+    student = forms.ModelChoiceField(queryset=Student.objects.none())
+    relationship = forms.ChoiceField(choices=ParentStudentLink.RELATIONSHIP)
+    date_of_birth = forms.DateField(widget=DateInput(attrs={'type': 'date'}))
+
+    def __init__(self, *args, **kwargs):
+        super(ParentLinkRequestForm, self).__init__(*args, **kwargs)
+        for field in self.visible_fields():
+            field.field.widget.attrs['class'] = 'form-control'
+        # The dropdown itself is populated client-side, one class at a time
+        # (get_students_for_registration) - an empty queryset keeps the
+        # unbound/initial render from dumping the entire student roster into
+        # the page source. On a real submission the form is bound, and the
+        # queryset needs to include the submitted id for clean() to accept
+        # it, so widen it only then.
+        if self.is_bound:
+            self.fields['student'].queryset = Student.objects.all()
+
+
 class EditResultForm(FormSettings):
     session_year = forms.ModelChoiceField(
         label="Session Year", queryset=Session.objects.none(), required=True)

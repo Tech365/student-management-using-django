@@ -1,0 +1,112 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Madrasa Jamaliyah | Register as a Parent</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'plugins/fontawesome-free/css/all.min.css' %}">
+    <link rel="stylesheet" href="https://code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css">
+    <link rel="stylesheet" href="{% static 'dist/css/adminlte.min.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700" rel="stylesheet">
+    {% include "includes/pwa_meta.html" %}
+</head>
+
+<body class="hold-transition login-page">
+    <div class="login-box" style="width: 480px;">
+        <div class="login-logo">
+            <a href="{% url 'login_page' %}">
+                <img src="{% static 'dist/img/madrasa-logo-full.png' %}" alt="Madrasa Jamaliyah"
+                    style="max-width: 240px; width: 100%; height: auto;">
+            </a>
+        </div>
+        <div class="card">
+            <div class="card-body login-card-body">
+                <p class="login-box-msg">Register as a Parent</p>
+                <p class="text-muted text-center">
+                    Create your account and request to link your child. A school admin
+                    will review and approve the link before you can see their profile.
+                </p>
+                {% if messages %}
+                <div class="col-12">
+                    {% for message in messages %}
+                    <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %} text-center">
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <h6 class="text-muted">Your details</h6>
+                    {% for field in reg_form %}
+                    <div class="form-group">
+                        {{ field.errors }}
+                        {{ field.label_tag }}
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+
+                    <h6 class="text-muted mt-3">Your child</h6>
+                    {% for field in link_form %}
+                    <div class="form-group">
+                        {{ field.errors }}
+                        {{ field.label_tag }}
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+
+                    <button type="submit" class="btn btn-primary btn-block">Submit for Approval</button>
+                </form>
+                <p class="mb-1 mt-3">
+                    <a href="{% url 'login_page' %}">Back to login</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="{% static 'plugins/jquery/jquery.min.js' %}"></script>
+    <script src="{% static 'plugins/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
+    <script src="{% static 'dist/js/adminlte.min.js' %}"></script>
+    <script>
+        $(document).ready(function () {
+            function loadStudents(selected) {
+                var courseId = $('#id_course').val();
+                var $student = $('#id_student');
+                $student.empty().append($('<option>', {value: '', text: 'Loading...'}));
+                if (!courseId) {
+                    $student.empty().append($('<option>', {value: '', text: '---------'}));
+                    return;
+                }
+                $.ajax({
+                    url: "{% url 'parent_register_get_students' %}",
+                    type: 'POST',
+                    data: {course: courseId, csrfmiddlewaretoken: '{{ csrf_token }}'}
+                }).done(function (response) {
+                    var students = JSON.parse(response);
+                    $student.empty();
+                    if (students.length === 0) {
+                        $student.append($('<option>', {value: '', text: 'No students in this class'}));
+                        return;
+                    }
+                    $student.append($('<option>', {value: '', text: '---------'}));
+                    $.each(students, function (i, s) {
+                        var opt = $('<option>', {value: s.id, text: s.name});
+                        if (selected && String(s.id) === String(selected)) { opt.prop('selected', true); }
+                        $student.append(opt);
+                    });
+                }).fail(function () {
+                    $student.empty().append($('<option>', {value: '', text: 'Could not load students'}));
+                });
+            }
+            var initialStudent = $('#id_student').val();
+            $('#id_course').on('change', function () { loadStudents(null); });
+            if ($('#id_course').val()) { loadStudents(initialStudent); }
+        });
+    </script>
+    {% include "includes/pwa_register.html" %}
+</body>
+
+</html>
