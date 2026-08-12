@@ -1046,6 +1046,22 @@ def toggle_admin_status(request, admin_id):
     return redirect(reverse('manage_admin'))
 
 
+def delete_admin(request, admin_id):
+    admin_user = get_object_or_404(CustomUser, admin__id=admin_id)
+    if admin_user.id == request.user.id:
+        messages.error(request, "You cannot delete your own account.")
+        return redirect(reverse('manage_admin'))
+    try:
+        admin_repr = str(admin_user)
+        admin_user.delete()
+        log_action(request, 'deleted', 'Admin', admin_repr)
+        messages.success(request, "Admin deleted successfully!")
+    except Exception:
+        logger.exception('Unhandled error in delete_admin')
+        messages.error(request, "Could not delete this admin.")
+    return redirect(reverse('manage_admin'))
+
+
 def delete_staff(request, staff_id):
     staff = get_object_or_404(CustomUser, staff__id=staff_id)
     try:

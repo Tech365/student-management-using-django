@@ -63,7 +63,8 @@
                                         <a href="{% url 'toggle_admin_status' admin.admin.id %}" class="btn {% if admin.is_active %}btn-warning{% else %}btn-success{% endif %}"
                                            onclick="return confirm('{% if admin.is_active %}Deactivate this admin? They will no longer be able to log in.{% else %}Reactivate this admin?{% endif %}')">
                                             {% if admin.is_active %}Deactivate{% else %}Activate{% endif %}
-                                        </a>
+                                        </a> -
+                                        <a href="{% url 'delete_admin' admin.admin.id %}" class="btn btn-danger" onclick="return confirm('This permanently deletes the admin and cannot be undone. Consider Deactivate instead. Continue?')">Delete</a>
                                         {% endif %}
                                     </td>
                                 </tr>

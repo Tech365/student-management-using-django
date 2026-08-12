@@ -67,6 +67,7 @@ urlpatterns = [
     path("admin/toggle-status/<int:admin_id>",
          hod_views.toggle_admin_status, name='toggle_admin_status'),
     path("admin/edit/<int:admin_id>", hod_views.edit_admin, name='edit_admin'),
+    path("admin/delete/<int:admin_id>", hod_views.delete_admin, name='delete_admin'),
     path("staff/manage/", hod_views.manage_staff, name='manage_staff'),
     path("staff/manage/csv/", hod_views.manage_staff_csv, name='manage_staff_csv'),
     path("student/manage/", hod_views.manage_student, name='manage_student'),

@@ -1445,3 +1445,15 @@ class EditUserCredentialsTests(TestCase):
         # to the login page instead of serving the page.
         response = self.client.get(reverse('manage_admin'))
         self.assertEqual(response.status_code, 200)
+
+    def test_delete_admin(self):
+        target = make_admin("deleteme_admin@example.com")
+        response = self.client.get(reverse('delete_admin', args=[target.admin.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(CustomUser.objects.filter(email="deleteme_admin@example.com").exists())
+
+    def test_cannot_delete_own_admin_account(self):
+        actor = CustomUser.objects.get(email="creds_admin@example.com")
+        response = self.client.get(reverse('delete_admin', args=[actor.admin.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(CustomUser.objects.filter(email="creds_admin@example.com").exists())
