@@ -479,7 +479,7 @@ def manage_subject(request):
 
 def edit_staff(request, staff_id):
     staff = get_object_or_404(Staff, id=staff_id)
-    form = StaffForm(request.POST or None, instance=staff)
+    form = StaffForm(request.POST or None, request.FILES or None, instance=staff)
     context = {
         'form': form,
         'staff_id': staff_id,
@@ -517,13 +517,14 @@ def edit_staff(request, staff_id):
                 messages.error(request, "Could Not Update " + str(e))
         else:
             messages.error(request, "Please fill the form properly")
+        return render(request, "hod_template/edit_staff_template.html", context)
     else:
         return render(request, "hod_template/edit_staff_template.html", context)
 
 
 def edit_student(request, student_id):
     student = get_object_or_404(Student, id=student_id)
-    form = StudentForm(request.POST or None, instance=student)
+    form = StudentForm(request.POST or None, request.FILES or None, instance=student)
     context = {
         'form': form,
         'student_id': student_id,
@@ -566,6 +567,7 @@ def edit_student(request, student_id):
                 messages.error(request, "Could Not Update " + str(e))
         else:
             messages.error(request, "Please Fill Form Properly!")
+        return render(request, "hod_template/edit_student_template.html", context)
     else:
         return render(request, "hod_template/edit_student_template.html", context)
 

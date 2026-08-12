@@ -1371,3 +1371,52 @@ class PrivacyNoticeTests(TestCase):
         response = self.client.get(reverse('privacy_notice'))
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Privacy Notice', response.content)
+
+
+class EditUserCredentialsTests(TestCase):
+    """Regression tests: edit_staff/edit_student used to always fail
+    validation (the form was never bound to request.FILES, so the
+    required profile_pic field was always empty) and, on top of that,
+    silently swallowed the failure with no HttpResponse returned - so an
+    admin changing a user's email+password believed it saved while
+    nothing was actually persisted, locking that user out."""
+
+    def setUp(self):
+        make_admin("creds_admin@example.com")
+        self.client.login(username="creds_admin@example.com", password=PASSWORD)
+        self.course = make_course("Creds Course")
+        self.session = make_session()
+
+    def test_edit_staff_email_and_password_without_new_photo(self):
+        staff = make_staff("old_staff@example.com", self.course)
+        response = self.client.post(reverse('edit_staff', args=[staff.id]), {
+            'first_name': 'New', 'last_name': 'Name',
+            'email': 'new_staff@example.com', 'gender': 'M', 'address': '1 Test St',
+            'password': 'BrandNewPass1',
+        })
+        self.assertEqual(response.status_code, 302)
+        staff.admin.refresh_from_db()
+        self.assertEqual(staff.admin.email, 'new_staff@example.com')
+        self.assertIsNotNone(authenticate(username='new_staff@example.com', password='BrandNewPass1'))
+
+    def test_edit_student_email_and_password_without_new_photo(self):
+        student = make_student("old_student@example.com", self.course, self.session)
+        response = self.client.post(reverse('edit_student', args=[student.id]), {
+            'first_name': 'New', 'last_name': 'Name',
+            'email': 'new_student@example.com', 'gender': 'F', 'address': '1 Test St',
+            'password': 'BrandNewPass1',
+            'course': self.course.id, 'session': self.session.id,
+        })
+        self.assertEqual(response.status_code, 302)
+        student.admin.refresh_from_db()
+        self.assertEqual(student.admin.email, 'new_student@example.com')
+        self.assertIsNotNone(authenticate(username='new_student@example.com', password='BrandNewPass1'))
+
+    def test_edit_staff_invalid_submission_rerenders_instead_of_crashing(self):
+        staff = make_staff("invalid_staff@example.com", self.course)
+        response = self.client.post(reverse('edit_staff', args=[staff.id]), {
+            'first_name': '', 'last_name': 'Name',
+            'email': 'invalid_staff@example.com', 'gender': 'M', 'address': '1 Test St',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'fill', response.content.lower())
