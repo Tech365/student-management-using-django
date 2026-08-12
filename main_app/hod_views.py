@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 import requests
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import update_session_auth_hash
 from django.core.files.storage import FileSystemStorage
 from django.db.models import Avg, Count, F, Q
 from django.http import HttpResponse, JsonResponse
@@ -570,6 +571,55 @@ def edit_student(request, student_id):
         return render(request, "hod_template/edit_student_template.html", context)
     else:
         return render(request, "hod_template/edit_student_template.html", context)
+
+
+def edit_admin(request, admin_id):
+    admin = get_object_or_404(Admin, id=admin_id)
+    form = AdminForm(request.POST or None, request.FILES or None, instance=admin)
+    context = {
+        'form': form,
+        'admin_id': admin_id,
+        'page_title': 'Edit Admin'
+    }
+    if request.method == 'POST':
+        if form.is_valid():
+            first_name = form.cleaned_data.get('first_name')
+            last_name = form.cleaned_data.get('last_name')
+            address = form.cleaned_data.get('address')
+            email = form.cleaned_data.get('email')
+            gender = form.cleaned_data.get('gender')
+            password = form.cleaned_data.get('password') or None
+            passport = request.FILES.get('profile_pic') or None
+            try:
+                user = CustomUser.objects.get(id=admin.admin.id)
+                user.email = email
+                if password is not None:
+                    user.set_password(password)
+                if passport is not None:
+                    fs = FileSystemStorage()
+                    filename = fs.save(passport.name, passport)
+                    passport_url = fs.url(filename)
+                    user.profile_pic = passport_url
+                user.first_name = first_name
+                user.last_name = last_name
+                user.gender = gender
+                user.address = address
+                user.save()
+                if password is not None and user.id == request.user.id:
+                    # Keep the current session valid instead of forcing an
+                    # immediate logout when a HOD changes their own password.
+                    update_session_auth_hash(request, user)
+                log_action(request, 'updated', 'Admin', user)
+                messages.success(request, "Successfully Updated")
+                return redirect(reverse('edit_admin', args=[admin_id]))
+            except Exception as e:
+                logger.exception('Unhandled error in edit_admin')
+                messages.error(request, "Could Not Update " + str(e))
+        else:
+            messages.error(request, "Please fill the form properly")
+        return render(request, "hod_template/edit_admin_template.html", context)
+    else:
+        return render(request, "hod_template/edit_admin_template.html", context)
 
 
 def edit_course(request, course_id):

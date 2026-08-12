@@ -1420,3 +1420,28 @@ class EditUserCredentialsTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'fill', response.content.lower())
+
+    def test_edit_admin_email_and_password_without_new_photo(self):
+        target = make_admin("old_admin@example.com")
+        response = self.client.post(reverse('edit_admin', args=[target.admin.id]), {
+            'first_name': 'New', 'last_name': 'Name',
+            'email': 'new_admin@example.com', 'gender': 'M', 'address': '1 Test St',
+            'password': 'BrandNewPass1',
+        })
+        self.assertEqual(response.status_code, 302)
+        target.refresh_from_db()
+        self.assertEqual(target.email, 'new_admin@example.com')
+        self.assertIsNotNone(authenticate(username='new_admin@example.com', password='BrandNewPass1'))
+
+    def test_edit_admin_self_password_change_keeps_session_valid(self):
+        actor = CustomUser.objects.get(email="creds_admin@example.com")
+        response = self.client.post(reverse('edit_admin', args=[actor.admin.id]), {
+            'first_name': 'Creds', 'last_name': 'Admin',
+            'email': 'creds_admin@example.com', 'gender': 'M', 'address': '1 Test St',
+            'password': 'BrandNewPass1',
+        })
+        self.assertEqual(response.status_code, 302)
+        # A stale session-auth-hash would bounce this authenticated request
+        # to the login page instead of serving the page.
+        response = self.client.get(reverse('manage_admin'))
+        self.assertEqual(response.status_code, 200)

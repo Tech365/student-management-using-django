@@ -57,13 +57,13 @@
                                         {% endif %}
                                     </td>
                                     <td>
+                                        <a href="{% url 'edit_admin' admin.admin.id %}" class="btn btn-primary">Edit</a>
                                         {% if admin.id != request.user.id %}
+                                        -
                                         <a href="{% url 'toggle_admin_status' admin.admin.id %}" class="btn {% if admin.is_active %}btn-warning{% else %}btn-success{% endif %}"
                                            onclick="return confirm('{% if admin.is_active %}Deactivate this admin? They will no longer be able to log in.{% else %}Reactivate this admin?{% endif %}')">
                                             {% if admin.is_active %}Deactivate{% else %}Activate{% endif %}
                                         </a>
-                                        {% else %}
-                                        <span class="text-muted">&mdash;</span>
                                         {% endif %}
                                     </td>
                                 </tr>
