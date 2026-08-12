@@ -14,7 +14,7 @@ from .forms import (LeaveReportStudentForm, ParentEditForm,
 from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      LeaveReportStudent, NotificationParent, NotificationStaff,
                      Parent, ParentStudentLink, Staff, Student, Subject)
-from .utils import log_action, parent_can_access_student, send_notification_email
+from .utils import log_action, parent_can_access_student, rate_limited, send_notification_email
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 
@@ -31,6 +31,9 @@ def parent_register(request):
         'page_title': 'Register as a Parent',
     }
     if request.method == 'POST':
+        if rate_limited(request, 'parent_register', max_attempts=5, window_seconds=3600):
+            messages.error(request, "Too many registration attempts. Please try again later.")
+            return render(request, "main_app/parent_register.html", context)
         if reg_form.is_valid() and link_formset.is_valid():
             first_name = reg_form.cleaned_data.get('first_name')
             last_name = reg_form.cleaned_data.get('last_name')
@@ -68,19 +71,28 @@ def parent_register(request):
                     "Registration submitted! You can log in now - the link(s) to your "
                     "child(ren) will show as pending until the Madrasa Admin approves them.")
                 return redirect(reverse('login_page'))
-            except Exception as e:
+            except Exception:
                 logger.exception('Unhandled error in parent_register')
-                messages.error(request, "Could Not Register: " + str(e))
+                # Generic on purpose - this is the one form on the whole
+                # site reachable with no account at all, so a raw
+                # exception string (e.g. a DB constraint name) must never
+                # reach the client here the way it's tolerated elsewhere
+                # for already-authenticated admin/staff/student users.
+                messages.error(request, "Could not complete registration. Please try again.")
         else:
             messages.error(request, "Please fill the form properly")
     return render(request, "main_app/parent_register.html", context)
 
 
 def get_students_for_registration(request):
+    if rate_limited(request, 'parent_register_search', max_attempts=60, window_seconds=60):
+        return JsonResponse({'error': 'Too many requests'}, status=429)
     course_id = request.POST.get('course')
     try:
         course = get_object_or_404(Course, id=course_id)
-        students = Student.objects.filter(course=course).select_related('admin')
+        # is_active=True: a withdrawn/deactivated student shouldn't be
+        # discoverable by this public, unauthenticated search.
+        students = Student.objects.filter(course=course, admin__is_active=True).select_related('admin')
         student_data = [
             {"id": student.id, "name": student.admin.last_name + " " + student.admin.first_name}
             for student in students

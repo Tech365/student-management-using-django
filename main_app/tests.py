@@ -4,6 +4,7 @@ import json
 
 from django.contrib.auth import authenticate
 from django.core import mail
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -16,7 +17,7 @@ from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      NotificationStudent, Parent, ParentStudentLink, Session,
                      Staff, Student, StudentResult, Subject)
 
-PASSWORD = "pass1234"
+PASSWORD = "TestPass9137!"  # must pass AUTH_PASSWORD_VALIDATORS - some tests submit it through a real form
 
 
 def make_admin(email):
@@ -191,6 +192,20 @@ class ResultPermissionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(StudentResult.objects.filter(student=self.student, subject=self.subject).exists())
 
+    def test_staff_add_result_rejects_student_outside_subjects_class(self):
+        """Even the subject's own teacher can't write grades for a student
+        who isn't enrolled in that subject's class."""
+        other_course = make_course("Other Result Course")
+        outsider = make_student("result_outsider@example.com", other_course, self.session)
+        self.client.login(username="owner@example.com", password=PASSWORD)
+        self.client.post(reverse('staff_add_result'), {
+            'student_list': outsider.id,
+            'subject': self.subject.id,
+            'test': 10,
+            'exam': 20,
+        })
+        self.assertFalse(StudentResult.objects.filter(student=outsider, subject=self.subject).exists())
+
 
 class EditResultViewPermissionTests(TestCase):
     """Regression tests for the matching IDOR in EditResultView."""
@@ -226,6 +241,18 @@ class EditResultViewPermissionTests(TestCase):
         self.result.refresh_from_db()
         self.assertEqual(self.result.test, 88)
         self.assertEqual(self.result.exam, 77)
+
+    def test_owner_cannot_edit_result_for_student_outside_subjects_class(self):
+        other_course = make_course("Other Edit Result Course")
+        outsider = make_student("edit_result_outsider@example.com", other_course, self.session)
+        outside_result = StudentResult.objects.create(student=outsider, subject=self.subject, test=1, exam=1)
+        self.client.login(username="owner2@example.com", password=PASSWORD)
+        self.client.post(reverse('edit_student_result'), {
+            'session_year': self.session.id, 'subject': self.subject.id,
+            'student': outsider.id, 'test': 99, 'exam': 99,
+        })
+        outside_result.refresh_from_db()
+        self.assertEqual(outside_result.test, 1)  # untouched
 
 
 class AttendanceUpdateRoutingTests(TestCase):
@@ -372,6 +399,32 @@ class AttendanceEndpointsPermissionTests(TestCase):
             'subject': self.owner_subject.id, 'session': self.session.id, 'date': '2026-08-08',
         })
         self.assertEqual(response.status_code, 200)
+
+    def test_save_attendance_rejects_student_outside_subjects_class(self):
+        """Even the subject's own teacher can't fabricate an attendance
+        record for a student who isn't enrolled in that subject's class."""
+        other_course = make_course("Other Attendance Course")
+        outsider = make_student("attendance_outsider@example.com", other_course, self.session)
+        self.client.logout()
+        self.client.login(username="attendance_owner@example.com", password=PASSWORD)
+        self.client.post(reverse('save_attendance'), {
+            'date': '2026-08-09', 'subject': self.owner_subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': outsider.id, 'status': 1}]),
+        })
+        self.assertFalse(AttendanceReport.objects.filter(student=outsider).exists())
+
+    def test_update_attendance_rejects_student_outside_subjects_class(self):
+        other_course = make_course("Other Update Attendance Course")
+        outsider = make_student("update_attendance_outsider@example.com", other_course, self.session)
+        outside_report = AttendanceReport.objects.create(student=outsider, attendance=self.attendance, status=False)
+        self.client.logout()
+        self.client.login(username="attendance_owner@example.com", password=PASSWORD)
+        self.client.post(reverse('update_attendance'), {
+            'date': self.attendance.id,
+            'student_ids': json.dumps([{'id': outsider.admin_id, 'status': 1}]),
+        })
+        outside_report.refresh_from_db()
+        self.assertFalse(outside_report.status)  # untouched
 
 
 class ViewUpdateAttendanceLeaveTests(TestCase):
@@ -1462,6 +1515,7 @@ class EditUserCredentialsTests(TestCase):
 
 class ParentFeatureTests(TestCase):
     def setUp(self):
+        cache.clear()  # rate_limited()'s counters live outside the DB, so the per-test rollback doesn't reset them
         self.admin_user = make_admin("parent_feature_admin@example.com")
         self.course = make_course("Parent Feature Course")
         self.session = make_session()
@@ -1642,6 +1696,7 @@ class ParentNotificationTests(TestCase):
     a notification to parents the way they already could to staff/students."""
 
     def setUp(self):
+        cache.clear()  # rate_limited()'s counters live outside the DB, so the per-test rollback doesn't reset them
         self.admin_user = make_admin("notif_admin@example.com")
         self.course = make_course("Notif Course")
         self.session = make_session()
@@ -1744,4 +1799,94 @@ class ParentNotificationTests(TestCase):
         self.client.login(username="notif_admin@example.com", password=PASSWORD)
         response = self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '1'})
         self.assertEqual(response.content, b'True')
+
+
+class SecurityHardeningTests(TestCase):
+    """Regression coverage for the full security/code review pass:
+    CSV formula injection, weak passwords, implausible dates, the
+    get_attendance access-control gap, and rate limiting."""
+
+    def setUp(self):
+        cache.clear()  # rate_limited()'s counters live outside the DB
+        self.admin_user = make_admin("hardening_admin@example.com")
+        self.course = make_course("Hardening Course")
+        self.session = make_session()
+        self.student = make_student("hardening_kid@example.com", self.course, self.session)
+
+    def test_csv_export_neutralizes_formula_injection(self):
+        LeaveReportStudent.objects.create(
+            student=self.student, date="2024-06-01", message="=cmd|'/c calc'!A0", status=0)
+        self.client.login(username="hardening_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('report_leave_csv'))
+        content = response.content.decode()
+        self.assertIn("'=cmd|'/c calc'!A0", content)
+        self.assertNotIn('\n=cmd', content)  # never a bare formula at the start of a cell
+
+    def test_registration_rejects_common_password(self):
+        response = self.client.post(reverse('parent_register'), {
+            'first_name': 'Weak', 'last_name': 'Parent', 'email': 'weak_pw_parent@example.com',
+            'gender': 'M', 'address': 'addr', 'password': 'password123', 'contact_number': '555',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
+        })
+        self.assertEqual(response.status_code, 200)  # re-rendered with errors, not redirected
+        self.assertFalse(CustomUser.objects.filter(email='weak_pw_parent@example.com').exists())
+
+    def test_registration_rejects_future_date_of_birth(self):
+        response = self.client.post(reverse('parent_register'), {
+            'first_name': 'Future', 'last_name': 'Parent', 'email': 'future_dob_parent@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2099-01-01',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(CustomUser.objects.filter(email='future_dob_parent@example.com').exists())
+
+    def test_get_attendance_rejects_student(self):
+        Subject.objects.create(name="Hardening Subject", course=self.course,
+                                staff=make_staff("hardening_teacher@example.com", self.course))
+        self.client.login(username=self.student.admin.email, password=PASSWORD)
+        response = self.client.post(reverse('get_attendance'), {
+            'subject': 1, 'session': self.session.id,
+        })
+        self.assertEqual(response.status_code, 403)
+
+    def test_get_students_for_registration_excludes_inactive_students(self):
+        inactive = make_student("hardening_inactive_kid@example.com", self.course, self.session)
+        inactive.admin.is_active = False
+        inactive.admin.save()
+        response = self.client.post(reverse('parent_register_get_students'), {'course': self.course.id})
+        names = [s['name'] for s in json.loads(response.json())]
+        self.assertNotIn(inactive.admin.last_name + " " + inactive.admin.first_name, names)
+        self.assertIn(self.student.admin.last_name + " " + self.student.admin.first_name, names)
+
+    def test_login_is_rate_limited(self):
+        for _ in range(10):
+            self.client.post(reverse('user_login'), {'email': 'nobody@example.com', 'password': 'wrong'})
+        response = self.client.post(
+            reverse('user_login'), {'email': self.admin_user.email, 'password': PASSWORD}, follow=True)
+        self.assertContains(response, "Too many login attempts")
+
+    def test_editing_parent_without_a_new_photo_does_not_crash(self):
+        """Regression: clean_profile_pic crashed on the existing-photo-URL
+        string Django substitutes in when no new file is uploaded on edit."""
+        self.client.login(username="hardening_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('parent_register'), {
+            'first_name': 'Photo', 'last_name': 'Parent', 'email': 'photo_parent@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
+        })
+        parent = Parent.objects.get(admin__email='photo_parent@example.com')
+        response = self.client.post(reverse('edit_parent', args=[parent.id]), {
+            'first_name': 'Photo', 'last_name': 'Parent', 'email': 'photo_parent@example.com',
+            'gender': 'M', 'address': 'addr', 'contact_number': '555',
+        })
+        self.assertEqual(response.status_code, 302)
         self.assertFalse(NotificationParent.objects.exists())

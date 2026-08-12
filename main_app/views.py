@@ -6,7 +6,8 @@ from django.contrib.auth import authenticate, login, logout
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render, reverse
 
-from .models import Attendance, Session, Subject
+from .models import Attendance, Session, Staff, Subject
+from .utils import rate_limited
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ def doLogin(request, **kwargs):
     if request.method != 'POST':
         return HttpResponse("<h4>Denied</h4>")
     else:
+        if rate_limited(request, 'login', max_attempts=10, window_seconds=300):
+            messages.error(request, "Too many login attempts. Please wait a few minutes and try again.")
+            return redirect("/")
         #Authenticate
         user = authenticate(request, username=request.POST.get('email'), password=request.POST.get('password'))
         if user is not None:
@@ -59,10 +63,21 @@ def logout_user(request):
 
 
 def get_attendance(request):
+    # Shared by the HOD's admin_view_attendance page (unrestricted, same
+    # as every other admin_view_* endpoint) and the staff update-attendance
+    # page (must be scoped to subjects this teacher actually teaches, same
+    # as staff_views.get_students/save_attendance) - anyone else has no
+    # legitimate reason to see another class's attendance-taken dates.
+    if request.user.user_type not in ('1', '2'):
+        return JsonResponse({'error': 'Not authorized'}, status=403)
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
     try:
-        subject = get_object_or_404(Subject, id=subject_id)
+        if request.user.user_type == '2':
+            staff = get_object_or_404(Staff, admin=request.user)
+            subject = get_object_or_404(Subject, id=subject_id, staff=staff)
+        else:
+            subject = get_object_or_404(Subject, id=subject_id)
         session = get_object_or_404(Session, id=session_id)
         attendance = Attendance.objects.filter(subject=subject, session=session)
         attendance_list = []

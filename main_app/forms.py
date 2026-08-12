@@ -1,7 +1,15 @@
+import os
+from datetime import date, timedelta
+
 from django import forms
+from django.contrib.auth.password_validation import validate_password
+from django.core.files.uploadedfile import UploadedFile
 from django.forms.widgets import DateInput, TextInput
 
 from .models import *
+
+ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+MAX_PROFILE_PIC_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 class FormSettings(forms.ModelForm):
@@ -35,6 +43,36 @@ class CustomUserForm(FormSettings):
                 self.fields[field].initial = instance.get(field)
             if self.instance.pk is not None:
                 self.fields['password'].widget.attrs['placeholder'] = "Fill this only if you wish to update password"
+
+    def clean_password(self):
+        # Blank is fine (means "keep the existing password" on edit,
+        # already enforced by required=False there) - only validate an
+        # actual new password against AUTH_PASSWORD_VALIDATORS.
+        password = self.cleaned_data.get('password')
+        if password:
+            validate_password(password)
+        return password
+
+    def clean_profile_pic(self):
+        # ImageField already verifies the content is a genuine image
+        # (Pillow-backed), but the saved filename's extension is taken
+        # from the upload verbatim (FileSystemStorage.save) - restrict it
+        # to a safe allowlist too, and cap the size so this can't be used
+        # for a disk-filling upload (nothing else in the app limits it,
+        # and parent_register is reachable with no account at all).
+        # On an edit with no new file chosen, Django's FileField.clean()
+        # falls back to the field's `initial` - the existing photo's
+        # stored URL *string*, not an uploaded file - so only validate
+        # when a real upload came through.
+        passport = self.cleaned_data.get('profile_pic')
+        if passport and isinstance(passport, UploadedFile):
+            ext = os.path.splitext(passport.name)[1].lower()
+            if ext not in ALLOWED_IMAGE_EXTENSIONS:
+                raise forms.ValidationError(
+                    "Unsupported image type. Use JPG, PNG, GIF, or WEBP.")
+            if passport.size > MAX_PROFILE_PIC_BYTES:
+                raise forms.ValidationError("Image must be smaller than 5MB.")
+        return passport
 
     def clean_email(self, *args, **kwargs):
         formEmail = self.cleaned_data['email'].lower()
@@ -230,6 +268,15 @@ class ParentLinkRequestForm(forms.Form):
         # it, so widen it only then.
         if self.is_bound:
             self.fields['student'].queryset = Student.objects.all()
+
+    def clean_date_of_birth(self):
+        dob = self.cleaned_data.get('date_of_birth')
+        if dob:
+            if dob > date.today():
+                raise forms.ValidationError("Date of birth can't be in the future.")
+            if dob < date.today() - timedelta(days=120 * 365):
+                raise forms.ValidationError("Please enter a valid date of birth.")
+        return dob
 
 
 # A parent can have more than one kid at the school, so both registration

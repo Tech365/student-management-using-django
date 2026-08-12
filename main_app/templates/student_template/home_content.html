@@ -116,11 +116,12 @@
 {% endblock content %}
 
 {% block custom_js %}
+  {{ data_name|json_script:"subject-list-data" }}
   <script>
 $(document).ready(function(){
 
     //Dataset
-    var subjects = {{data_name|safe}}
+    var subjects = JSON.parse(document.getElementById('subject-list-data').textContent)
     var data_present = {{data_present}}
     var data_absent = {{data_absent}}
 

@@ -116,6 +116,7 @@
 {% endblock content %}
 
 {% block custom_js %}
+  {{ subject_list|json_script:"subject-list-data" }}
   <script>
       $(document).ready(function(){
         var donutData        = {
@@ -141,7 +142,7 @@
           options: pieOptions      
         });
 
-        var subject_list = {{ subject_list|safe|escape }};
+        var subject_list = JSON.parse(document.getElementById('subject-list-data').textContent);
         var attendance_list = {{ attendance_list }};
   
             var barChartData = {

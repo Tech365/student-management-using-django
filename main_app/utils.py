@@ -2,6 +2,7 @@ import csv
 import io
 import logging
 
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.http import HttpResponse
@@ -15,6 +16,29 @@ def paginate(request, queryset, per_page=PAGE_SIZE):
     """Return the requested page of `queryset` using the `page` query param."""
     paginator = Paginator(queryset, per_page)
     return paginator.get_page(request.GET.get('page'))
+
+
+def client_ip(request):
+    """The real client address behind the nginx reverse proxy.
+
+    nginx sets X-Real-IP from $remote_addr on every request (proxy_set_header
+    always overwrites, so a client can't spoof it) - gunicorn itself only
+    ever sees the proxy's own loopback address, which is useless for rate
+    limiting. Falls back to REMOTE_ADDR for local/dev/test runs with no
+    proxy in front."""
+    return request.META.get('HTTP_X_REAL_IP') or request.META.get('REMOTE_ADDR', 'unknown')
+
+
+def rate_limited(request, key, max_attempts, window_seconds):
+    """True if this client has hit `key` more than `max_attempts` times in
+    the last `window_seconds` - a simple fixed-window counter, good enough
+    to blunt scripted brute-forcing/spam without adding a new dependency."""
+    cache_key = f'ratelimit:{key}:{client_ip(request)}'
+    attempts = cache.get(cache_key, 0)
+    if attempts >= max_attempts:
+        return True
+    cache.set(cache_key, attempts + 1, window_seconds)
+    return False
 
 
 def read_csv_rows(uploaded_file):
@@ -34,14 +58,30 @@ def read_csv_rows(uploaded_file):
         }
 
 
+_FORMULA_LEAD_CHARS = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _neutralize_formula(value):
+    """Prefix a cell with a leading `'` if it starts with a character a
+    spreadsheet app would interpret as the start of a formula (CWE-1236 -
+    CSV/DDE injection). Several exports here include free text a regular
+    user can set (leave application messages, names, addresses), and this
+    is the one choke point every CSV export already goes through."""
+    text = str(value)
+    if text.startswith(_FORMULA_LEAD_CHARS):
+        return "'" + text
+    return text
+
+
 def csv_response(filename, header, rows):
     """Build a downloadable CSV HttpResponse from a header list and an
     iterable of row tuples/lists."""
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     writer = csv.writer(response)
-    writer.writerow(header)
-    writer.writerows(rows)
+    writer.writerow([_neutralize_formula(cell) for cell in header])
+    for row in rows:
+        writer.writerow([_neutralize_formula(cell) for cell in row])
     return response
 
 

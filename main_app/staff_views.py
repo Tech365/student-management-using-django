@@ -130,7 +130,10 @@ def save_attendance(request):
             Student.objects.filter(id__in=submitted_ids), date)
 
         for student_dict in students:
-            student = get_object_or_404(Student, id=student_dict.get('id'))
+            # Scoped to the subject's own class - otherwise a submitted
+            # student id from a different class would get an attendance
+            # record fabricated against this subject/session/date.
+            student = get_object_or_404(Student, id=student_dict.get('id'), course_id=subject.course_id)
             if student.id in on_leave_ids:
                 # Approved leave for this date - don't record attendance
                 # for them at all, even if the client tried to send one.
@@ -212,15 +215,21 @@ def update_attendance(request):
         attendance = get_object_or_404(Attendance, id=date, subject__staff=staff)
 
         admin_ids = [student_dict.get('id') for student_dict in students]
+        # Scoped to the attendance's own class, same reasoning as save_attendance.
         students_by_admin_id = {
-            s.admin_id: s for s in Student.objects.filter(admin_id__in=admin_ids)
+            s.admin_id: s for s in Student.objects.filter(
+                admin_id__in=admin_ids, course_id=attendance.subject.course_id)
         }
         on_leave_ids = _approved_leave_student_ids(
             students_by_admin_id.values(), attendance.date.isoformat())
 
         for student_dict in students:
-            student = students_by_admin_id.get(student_dict.get('id')) \
-                or get_object_or_404(Student, admin_id=student_dict.get('id'))
+            student = students_by_admin_id.get(student_dict.get('id'))
+            if student is None:
+                # Not in this class - don't fall back to an unscoped
+                # lookup, or a submitted id from another course could be
+                # used to poke at this class's attendance records.
+                continue
             if student.id in on_leave_ids:
                 # Approved leave for this date - don't record attendance
                 # for them at all, even if the client tried to send one.
@@ -408,10 +417,13 @@ def staff_add_result(request):
             subject_id = request.POST.get('subject')
             test = request.POST.get('test')
             exam = request.POST.get('exam')
-            student = get_object_or_404(Student, id=student_id)
             # Scoped to `staff` so a staff member can't submit another
             # teacher's subject_id and edit grades they don't own.
             subject = get_object_or_404(Subject, id=subject_id, staff=staff)
+            # Scoped to the subject's own class - otherwise any student id
+            # in the school could have grades written against a subject
+            # they never took.
+            student = get_object_or_404(Student, id=student_id, course_id=subject.course_id)
             try:
                 data = StudentResult.objects.get(
                     student=student, subject=subject)
@@ -434,10 +446,11 @@ def fetch_student_result(request):
         staff = get_object_or_404(Staff, admin=request.user)
         subject_id = request.POST.get('subject')
         student_id = request.POST.get('student')
-        student = get_object_or_404(Student, id=student_id)
         # Scoped to `staff` so a staff member can't read another
         # teacher's subject results by guessing subject_id.
         subject = get_object_or_404(Subject, id=subject_id, staff=staff)
+        # Scoped to the subject's own class, same reasoning as staff_add_result.
+        student = get_object_or_404(Student, id=student_id, course_id=subject.course_id)
         result = StudentResult.objects.get(student=student, subject=subject)
         result_data = {
             'exam': result.exam,

@@ -7,6 +7,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
 from django.core.files.storage import FileSystemStorage
+from django.db import transaction
 from django.db.models import Avg, Count, F, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -937,14 +938,19 @@ def view_parent_link_requests(request):
         status = request.POST.get('status')
         status = 1 if status == '1' else -1
         try:
-            link = get_object_or_404(ParentStudentLink, id=id)
-            if link.status != 0:
-                # Already decided - don't overwrite or send a duplicate notification.
-                return HttpResponse(False)
-            link.status = status
-            link.decided_at = timezone.now()
-            link.decided_by = request.user
-            link.save()
+            with transaction.atomic():
+                # select_for_update so two near-simultaneous approve/reject
+                # requests for the same link can't both pass the status==0
+                # check before either writes (duplicate notification/email).
+                link = get_object_or_404(
+                    ParentStudentLink.objects.select_for_update(), id=id)
+                if link.status != 0:
+                    # Already decided - don't overwrite or send a duplicate notification.
+                    return HttpResponse(False)
+                link.status = status
+                link.decided_at = timezone.now()
+                link.decided_by = request.user
+                link.save()
             if status == 1 and not link.student.date_of_birth:
                 link.student.date_of_birth = link.date_of_birth
                 link.student.save()

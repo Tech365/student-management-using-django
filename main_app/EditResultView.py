@@ -37,6 +37,12 @@ class EditResultView(View):
                 if subject.staff_id != staff.id:
                     messages.warning(request, "Result Could Not Be Updated")
                     return render(request, "staff_template/edit_student_result.html", context)
+                # Same reasoning for the student - otherwise a tampered
+                # student id from outside this subject's class could be
+                # used to edit results they never had.
+                if student.course_id != subject.course_id:
+                    messages.warning(request, "Result Could Not Be Updated")
+                    return render(request, "staff_template/edit_student_result.html", context)
                 result = StudentResult.objects.get(student=student, subject=subject)
                 result.exam = exam
                 result.test = test
