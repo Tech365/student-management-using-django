@@ -197,7 +197,7 @@
 
                 }
             }).fail(function(response){
-                alert("Error While Fetching Data")
+                notifyUser("Error while fetching data", "error")
                 $("#error_attendance").html("")
                 $("#error_attendance").show()
                 $("#attendance_block").hide()
@@ -213,7 +213,7 @@
             var subject = $("#subject").val()
             $("#student_data").html(null)
 if (attendance_date.length  == 0){
-    alert("Please Choose A Date");
+    notifyUser("Please choose a date", "warning");
     $("#save_attendance").hide()
 
     return false;
@@ -229,7 +229,7 @@ if (attendance_date.length  == 0){
             }).done(function (response) {
                 var json_data = JSON.parse(response)
                 if (json_data.length < 1) {
-                    alert("No data to display")
+                    notifyUser("No data to display", "warning")
 
                 } else {
 
@@ -252,11 +252,11 @@ if (attendance_date.length  == 0){
                     $("#student_data").html(div_data)
                 }
             }).fail(function (response) {
-                alert("Error in fetching students")
+                notifyUser("Error fetching students", "error")
             })
 
         })
-       
+
     })
 </script>
 {% endblock custom_js %}

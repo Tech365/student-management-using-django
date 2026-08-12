@@ -101,6 +101,11 @@ def get_students(request):
                     "id": student.id,
                     "name": student.admin.last_name + " " + student.admin.first_name,
                     "on_leave": student.id in on_leave_ids,
+                    # profile_pic is stored as a plain path string (see
+                    # hod_views.add_student), not a normal FileField upload,
+                    # so render it the same way every template does:
+                    # str(...) - not .url, which would double-prefix it.
+                    "profile_pic": str(student.admin.profile_pic),
                     }
             student_data.append(data)
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
@@ -368,7 +373,7 @@ def staff_view_profile(request):
                 messages.success(request, "Profile Updated!")
                 return redirect(reverse('staff_view_profile'))
             else:
-                messages.error(request, "Invalid Data Provided")
+                messages.error(request, "Please check the form - some required fields are missing or invalid.")
                 return render(request, "staff_template/staff_view_profile.html", context)
         except Exception as e:
             logger.exception('Unhandled error in staff_view_profile')
@@ -437,7 +442,7 @@ def staff_add_result(request):
                 messages.success(request, "Scores Saved")
         except Exception as e:
             logger.exception('Unhandled error in staff_add_result')
-            messages.warning(request, "Error Occurred While Processing Form")
+            messages.warning(request, "Couldn't save your changes. Please check the form and try again.")
     return render(request, "staff_template/staff_add_result.html", context)
 
 

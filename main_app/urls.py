@@ -27,6 +27,7 @@ urlpatterns = [
     path("doLogin/", views.doLogin, name='user_login'),
     path("logout_user/", views.logout_user, name='user_logout'),
     path("admin/home/", hod_views.admin_home, name='admin_home'),
+    path("admin/search/", hod_views.global_search, name='global_search'),
     path("admin/add/", hod_views.add_admin, name='add_admin'),
     path("staff/add", hod_views.add_staff, name='add_staff'),
     path("staff/bulk_upload/", hod_views.bulk_upload_staff, name='bulk_upload_staff'),

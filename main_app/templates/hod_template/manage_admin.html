@@ -19,7 +19,7 @@
                     </div>
                     <!-- /.card-header -->
                     <div class="card-body">
-                        <table id="example2" class="table table-bordered table-hover">
+                        <table id="example2" class="js-datatable table table-bordered table-hover">
                             <thead>
                                 <tr>
                                     <th>SN</th>
@@ -61,17 +61,16 @@
                                         {% if admin.id != request.user.id %}
                                         -
                                         <a href="{% url 'toggle_admin_status' admin.admin.id %}" class="btn {% if admin.is_active %}btn-warning{% else %}btn-success{% endif %}"
-                                           onclick="return confirm('{% if admin.is_active %}Deactivate this admin? They will no longer be able to log in.{% else %}Reactivate this admin?{% endif %}')">
+                                           onclick="return confirmNavigate(event, '{% if admin.is_active %}Deactivate this admin? They will no longer be able to log in.{% else %}Reactivate this admin?{% endif %}')">
                                             {% if admin.is_active %}Deactivate{% else %}Activate{% endif %}
                                         </a> -
-                                        <a href="{% url 'delete_admin' admin.admin.id %}" class="btn btn-danger" onclick="return confirm('This permanently deletes the admin and cannot be undone. Consider Deactivate instead. Continue?')">Delete</a>
+                                        <a href="{% url 'delete_admin' admin.admin.id %}" class="btn btn-danger" onclick="return confirmNavigate(event, 'This permanently deletes the admin and cannot be undone. Consider Deactivate instead. Continue?')">Delete</a>
                                         {% endif %}
                                     </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
-                        {% include "includes/pagination.html" %}
                     </div>
                 </div>
             </div>

@@ -5,7 +5,7 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Student Management System</title>
+    <title>{% block title %}{% if page_title %}{{ page_title }} | {% endif %}Madrasa Jamaliyah{% endblock title %}</title>
     <!-- Tell the browser to be responsive to screen width -->
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- Font Awesome -->
@@ -29,7 +29,38 @@
     <link rel="stylesheet" href="{% static 'plugins/summernote/summernote-bs4.css'%} ">
     <!-- Google Font: Source Sans Pro -->
     <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700" rel="stylesheet">
+    <!-- DataTables -->
+    <link rel="stylesheet" href="{% static 'plugins/datatables-bs4/css/dataTables.bootstrap4.min.css' %}">
+    <link rel="stylesheet" href="{% static 'plugins/datatables-responsive/css/responsive.bootstrap4.min.css' %}">
+    <!-- Toastr -->
+    <link rel="stylesheet" href="{% static 'plugins/toastr/toastr.min.css' %}">
     {% include "includes/pwa_meta.html" %}
+    <style>
+        /* Madrasa Jamaliyah brand accent - the school's own blue, not AdminLTE's default */
+        :root { --brand-blue: #014AA9; }
+        .main-sidebar .brand-link { border-bottom-color: rgba(255,255,255,.15); }
+        .nav-sidebar > .nav-item > .nav-link.active,
+        .nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
+            background-color: var(--brand-blue);
+        }
+        .btn-primary, .page-item.active .page-link {
+            background-color: var(--brand-blue);
+            border-color: var(--brand-blue);
+        }
+        .btn-primary:hover, .btn-primary:focus {
+            background-color: #013a85;
+            border-color: #013a85;
+        }
+        .navbar-brand-logo {
+            height: 32px;
+            width: auto;
+            margin-right: 8px;
+        }
+        .navbar-brand-text {
+            font-weight: 600;
+            color: var(--brand-blue);
+        }
+    </style>
     {% block custom_css %}
 
     {% endblock custom_css %}
@@ -46,9 +77,25 @@
                 <li class="nav-item">
                     <a class="nav-link" data-widget="pushmenu" href="#"><i class="fas fa-bars"></i></a>
                 </li>
-
+                <li class="nav-item d-none d-sm-inline-flex align-items-center">
+                    <img src="{% static 'dist/img/madrasa-emblem-circular.png' %}" alt="" class="navbar-brand-logo">
+                    <span class="navbar-brand-text">Madrasa Jamaliyah</span>
+                </li>
             </ul>
 
+            {% if request.user.user_type == '1' %}
+            <form class="form-inline ml-auto mr-3" action="{% url 'global_search' %}" method="get">
+                <div class="input-group input-group-sm">
+                    <input class="form-control" type="search" name="q" placeholder="Search people..."
+                           aria-label="Search" value="{{ request.GET.q }}">
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-secondary" type="submit">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+            </form>
+            {% endif %}
 
         </nav>
         <!-- /.navbar -->
@@ -72,7 +119,17 @@
                         <div class="col-sm-6">
                             
                             <ol class="breadcrumb float-sm-right">
-                                <li class="breadcrumb-item"><a href="#">Home</a></li>
+                                <li class="breadcrumb-item">
+                                    {% if request.user.user_type == '1' %}
+                                    <a href="{% url 'admin_home' %}">Home</a>
+                                    {% elif request.user.user_type == '2' %}
+                                    <a href="{% url 'staff_home' %}">Home</a>
+                                    {% elif request.user.user_type == '4' %}
+                                    <a href="{% url 'parent_home' %}">Home</a>
+                                    {% else %}
+                                    <a href="{% url 'student_home' %}">Home</a>
+                                    {% endif %}
+                                </li>
                                 <li class="breadcrumb-item active">{{ page_title }}</li>
                             </ol>
                         </div><!-- /.col -->
@@ -116,6 +173,26 @@
 
     </div>
     <!-- ./wrapper -->
+
+    <!-- Shared confirm modal - see confirmAction() below. Replaces native
+         confirm() so every "Delete"/"Deactivate"-style action looks and
+         behaves the same, on every page. -->
+    <div class="modal fade" id="sharedConfirmModal" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Please confirm</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+                <div class="modal-body"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                    <button type="button" id="sharedConfirmModalOk" class="btn btn-danger">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- jQuery -->
     <script src="{% static 'plugins/jquery/jquery.min.js'%} "></script>
     <!-- Attach the CSRF token to every AJAX request so views don't need
@@ -167,10 +244,63 @@
     <script src="{% static 'plugins/overlayScrollbars/js/jquery.overlayScrollbars.min.js'%} "></script>
     <!-- AdminLTE App -->
     <script src="{% static 'dist/js/adminlte.js'%} "></script>
-    <!-- AdminLTE dashboard demo (This is only for demo purposes) -->
-    <script src="{% static 'dist/js/pages/dashboard.js'%} "></script>
-    <!-- AdminLTE for demo purposes -->
-    <script src="{% static 'dist/js/demo.js'%} "></script>
+    <!-- DataTables -->
+    <script src="{% static 'plugins/datatables/jquery.dataTables.min.js' %}"></script>
+    <script src="{% static 'plugins/datatables-bs4/js/dataTables.bootstrap4.min.js' %}"></script>
+    <script src="{% static 'plugins/datatables-responsive/js/dataTables.responsive.min.js' %}"></script>
+    <script src="{% static 'plugins/datatables-responsive/js/responsive.bootstrap4.min.js' %}"></script>
+    <!-- Toastr -->
+    <script src="{% static 'plugins/toastr/toastr.min.js' %}"></script>
+    <script>
+        // Shared feedback helpers - use these instead of alert()/confirm() so
+        // every screen gives feedback the same, on-brand way.
+        toastr.options = {
+            closeButton: true, progressBar: true, positionClass: 'toast-top-right',
+            timeOut: 4000, extendedTimeOut: 1500,
+        };
+        function notifyUser(message, type) {
+            (toastr[type] || toastr.info)(message);
+        }
+
+        var _confirmModalCallback = null;
+        function confirmAction(message, onConfirm) {
+            $('#sharedConfirmModal .modal-body').text(message);
+            _confirmModalCallback = onConfirm;
+            $('#sharedConfirmModal').modal('show');
+        }
+        // For plain <a href> navigation links previously using
+        // onclick="return confirm(...)" - shows the same shared modal,
+        // then follows the link's own href if the user continues.
+        function confirmNavigate(event, message) {
+            event.preventDefault();
+            var href = event.currentTarget.getAttribute('href');
+            confirmAction(message, function () { window.location.href = href; });
+            return false;
+        }
+        $(document).ready(function () {
+            $('#sharedConfirmModalOk').on('click', function () {
+                $('#sharedConfirmModal').modal('hide');
+                if (typeof _confirmModalCallback === 'function') {
+                    _confirmModalCallback();
+                }
+                _confirmModalCallback = null;
+            });
+
+            // Search + sort + mobile-responsive collapsing for the plain
+            // Manage-X list tables. Scoped to .js-datatable rather than
+            // every table on the page - a couple of other tables (e.g. the
+            // notification broadcast pages) bind their own per-row click
+            // handlers directly to <tr> elements, which client-side
+            // paging/searching can interact with unpredictably.
+            $('table.js-datatable').each(function () {
+                $(this).DataTable({
+                    responsive: true,
+                    autoWidth: false,
+                    order: [],
+                });
+            });
+        });
+    </script>
     {% block custom_js %}
 
     {% endblock custom_js %}

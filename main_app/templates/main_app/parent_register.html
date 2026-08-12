@@ -53,6 +53,11 @@
                     {% endfor %}
 
                     <h6 class="text-muted mt-3">Your children</h6>
+                    <p class="text-muted" style="font-size: 13px;">
+                        Search your child by class, then confirm their name. Their date of birth
+                        helps the school verify it's really your child before approving the link -
+                        it's checked against their enrollment record, not shared anywhere else.
+                    </p>
                     <div id="children-container">
                         {{ link_formset.management_form }}
                         {% for child_form in link_formset %}

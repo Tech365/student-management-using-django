@@ -27,11 +27,18 @@
                                 <th>Action</th>
                             </tr>
                             {% for link in allLinks %}
-                            <tr>
+                            <tr class="{% if link.is_contested %}table-warning{% endif %}">
                                 <td>{{forloop.counter}}</td>
                                 <td>{{link.parent}} ({{link.parent.admin.email}})</td>
                                 <td>{{link.parent.contact_number}}</td>
-                                <td>{{link.student}}</td>
+                                <td>
+                                    {{link.student}}
+                                    {% if link.is_contested %}
+                                    <br><span class="badge badge-warning" title="Another parent also has a pending request for this student">
+                                        <i class="fas fa-exclamation-triangle"></i> Also requested by another parent
+                                    </span>
+                                    {% endif %}
+                                </td>
                                 <td>{{link.student.course}}</td>
                                 <td>{{link.get_relationship_display}}</td>
                                 <td>{{link.date_of_birth}}</td>
@@ -105,16 +112,16 @@
         }
     }).done(function(response){
         if (response == "True"){
-            alert("Response Has Been Saved!")
+            notifyUser("Response saved", "success")
             location.reload()
         }else{
-            alert("Reply Could Not Be Sent")
+            notifyUser("Reply could not be sent", "error")
         }
     }).fail(function(response){
-        alert("Error Occured. ")
+        notifyUser("An error occurred. Please try again", "error")
     })
 }else{
-    alert("Choose valid response")
+    notifyUser("Choose Approve or Reject first", "warning")
 }
           })
       })

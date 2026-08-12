@@ -77,18 +77,18 @@
             }).done(function (response) {
                 var json_data = JSON.parse(response)
                 if (json_data.length < 1) {
-                    alert("No data to display")
+                    notifyUser("No students found for this class/session", "warning")
                 } else {
                     var div_data = "<option>Select Student</option>"
 
                     for (key in json_data) {
                         div_data += "<option value='" + json_data[key]['id'] + "'>" + json_data[key]['name'] + " </option>"
                     }
-             
+
                     $("#id_student").html(div_data)
                 }
             }).fail(function (response) {
-                alert("Error in fetching students")
+                notifyUser("Error fetching students", "error")
             })
                }
 
@@ -114,7 +114,7 @@
                     }
                 }).done(function (response) {
                     if (response == 'False') {
-                        alert("No data to display")
+                        notifyUser("No existing result for this student/subject yet", "info")
                     } else {
                         var json_data = JSON.parse(response)
                         
@@ -128,7 +128,7 @@
 
                     }
                 }).fail(function (response) {
-                    alert("Error in fetching students")
+                    notifyUser("Error fetching the result", "error")
                 })
                }
 

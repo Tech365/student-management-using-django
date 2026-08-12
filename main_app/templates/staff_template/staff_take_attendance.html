@@ -1,6 +1,22 @@
 {% extends 'main_app/base.html' %}
 {% load static %}
 {% block page_title %}{{page_title}}{% endblock page_title %}
+{% block custom_css %}
+<style>
+    .roster-avatar {
+        width: 32px;
+        height: 32px;
+        object-fit: cover;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+    }
+    .roster-item .custom-control-label {
+        display: flex;
+        align-items: center;
+    }
+</style>
+{% endblock custom_css %}
 {% block content %}
 
 <section class="content">
@@ -109,89 +125,102 @@
             sessionSelect.prop("disabled", false)
         })
 
-        $("#fetch_student").click(function () {
-            var course = $("#course").val()
+        function renderRoster(json_data) {
+            if (json_data.length < 1) {
+                $("#student_data").html('<div class="alert alert-warning mt-3">No students found for this class/session.</div>')
+                return
+            }
+            var div_data = "<hr/><div class='mb-2'>" +
+                "<button type='button' id='mark_all_present' class='btn btn-outline-success btn-sm'>Mark All Present</button> " +
+                "<button type='button' id='mark_all_absent' class='btn btn-outline-danger btn-sm'>Mark All Absent</button>" +
+                "</div><div class='row'>"
+
+            for (key in json_data) {
+                var on_leave = json_data[key]['on_leave']
+                var checked_attr = on_leave ? "" : "checked='checked'"
+                var disabled_attr = on_leave ? "disabled='disabled'" : ""
+                var leave_badge = on_leave ? " <span class='badge badge-warning'>On Leave</span>" : ""
+                var avatar = json_data[key]['profile_pic']
+                    ? "<img class='roster-avatar' src='" + json_data[key]['profile_pic'] + "' alt=''>"
+                    : "<i class='fas fa-user-circle roster-avatar' style='font-size:32px;color:#ccc;'></i>"
+                div_data += "<div class='col-lg-3 roster-item'><div class='form-check custom-control custom-checkbox'><input type='checkbox' class='custom-control-input' " + checked_attr + " " + disabled_attr + " name='student_data[]' value=" + json_data[key]['id'] + " id='checkbox" + json_data[key]['id'] + "' /> <label for='checkbox" + json_data[key]['id'] + "' class='custom-control-label'>" + avatar + json_data[key]['name'] + leave_badge + "</label></div> </div>"
+            }
+            div_data += "</div>"
+            div_data += "<div class='form-group mt-2'><button id='save_attendance' class='btn btn-success' type='button'>Save Attendance</button></div>"
+            $("#student_data").html(div_data)
+        }
+
+        function fetchStudents() {
             var subject = $("#subject").val()
             var session = $("#session").val()
             var attendance_date = $("#attendance_date").val()
-            $("#student_data").html(null)
-if (course.length == 0 || subject.length == 0 || session.length == 0 || attendance_date.length == 0){
-    alert("Please select class, subject, session and date");
-    return false;
-}
+            if ($("#course").val().length == 0 || subject.length == 0 || session.length == 0 || attendance_date.length == 0) {
+                notifyUser("Please select class, subject, session and date", "warning")
+                return
+            }
             $.ajax({
                 url: "{% url 'get_students' %}",
                 type: 'POST',
+                data: { subject: subject, session: session, date: attendance_date }
+            }).done(function (response) {
+                renderRoster(JSON.parse(response))
+            }).fail(function (response) {
+                notifyUser("Error fetching students", "error")
+            })
+        }
+
+        $("#fetch_student").click(function () {
+            fetchStudents()
+        })
+
+        // Delegated, bound once - not re-bound on every fetch, so
+        // re-fetching (e.g. after changing the date) can never cause a
+        // duplicate save when Save Attendance is clicked afterwards.
+        $(document).on('click', '#mark_all_present', function () {
+            $("input[name='student_data[]']:not(:disabled)").prop('checked', true)
+        })
+        $(document).on('click', '#mark_all_absent', function () {
+            $("input[name='student_data[]']:not(:disabled)").prop('checked', false)
+        })
+        $(document).on('click', '#save_attendance', function () {
+            var $btn = $(this)
+            $btn.attr("disabled", "disabled").text("Saving Attendance Data...")
+            var student_data = $("input[name='student_data[]']:not(:disabled)").map(function () {
+                return { 'id': $(this).val(), 'status': $(this).is(":checked") ? 1 : 0 }
+            }).get()
+            var subject = $("#subject").val()
+            var session = $("#session").val()
+            var attendance_date = $('#attendance_date').val()
+            if (attendance_date.length < 10) {
+                notifyUser("Select a date", "warning")
+                $btn.removeAttr("disabled").text("Save Attendance")
+                return
+            }
+            $.ajax({
+                url: "{% url 'save_attendance' %}",
+                type: 'POST',
                 data: {
+                    date: attendance_date,
+                    student_ids: JSON.stringify(student_data),
                     subject: subject,
-                    session: session,
-                    date: attendance_date
+                    session: session
                 }
             }).done(function (response) {
-                var json_data = JSON.parse(response)
-                if (json_data.length < 1) {
-                    alert("No data to display")
+                if (response == 'OK') {
+                    notifyUser("Attendance saved", "success")
+                    // Re-fetch in place instead of reloading the page, so
+                    // the class/subject/session/date you just used stays
+                    // selected - handy for taking attendance for the next
+                    // subject right after this one.
+                    fetchStudents()
                 } else {
-                    var div_data = "<hr/><div class='row'>"
-
-                    for (key in json_data) {
-                        var on_leave = json_data[key]['on_leave']
-                        var checked_attr = on_leave ? "" : "checked='checked'"
-                        var disabled_attr = on_leave ? "disabled='disabled'" : ""
-                        var leave_badge = on_leave ? " <span class='badge badge-warning'>On Leave</span>" : ""
-                        div_data += "<div class='col-lg-3'><div class='form-check custom-control custom-checkbox'><input type='checkbox' class='custom-control-input' " + checked_attr + " " + disabled_attr + " name='student_data[]' value=" + json_data[key]['id'] + " id='checkbox" + json_data[key]['id'] + "' /> <label for='checkbox" + json_data[key]['id'] + "' class='custom-control-label'>" + json_data[key]['name'] + leave_badge + "</label></div> </div>"
-                    }
-                    div_data += "</div>"
-                    div_data += "<div class='form-group'><button id='save_attendance' class='btn btn-success' type='button'>Save Attendance</button></div>"
-                    $("#student_data").html(div_data)
+                    notifyUser("Error saving attendance. Please try again", "error")
+                    $btn.removeAttr("disabled").text("Save Attendance")
                 }
             }).fail(function (response) {
-                alert("Error in fetching students")
+                notifyUser("Error saving attendance", "error")
+                $btn.removeAttr("disabled").text("Save Attendance")
             })
-
-
-            $(document).on('click', '#save_attendance', function () {
-                $(this).attr("disabled","disabled")
-                $(this).text("Saving Attendance Data...")
-                var student_data = $("input[name='student_data[]']:not(:disabled)").map(function () {
-                    if ($(this).is(":checked")){
-                    return {'id':$(this).val(), 'status': 1};
-
-                    }
-                    return {'id':$(this).val(), 'status': 0};
-
-                }).get()
-                var attendance_date = $('#attendance_date').val()
-                if (attendance_date.length < 10){
-                    alert("Select date")
-                    return false;
-                }
-                student_data = JSON.stringify(student_data)
-                $.ajax({
-                    url: "{% url 'save_attendance' %}",
-                    type: 'POST',
-                    data: {
-                        date: attendance_date,
-                        student_ids: student_data,
-                        subject: subject,
-                        session: session
-            
-                    }
-                }).done(function (response) {
-                    if (response == 'OK'){
-                        alert("Saved")
-                    }else{
-                        alert("Error. Please try again")
-                    }
-                    location.reload()
-                    
-                }).fail(function (response) {
-                    alert("Error in saving attendance")
-                })
-    
-            })
-
-
         })
     })
 </script>

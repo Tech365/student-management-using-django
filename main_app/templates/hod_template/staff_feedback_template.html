@@ -117,13 +117,13 @@
                     }
                 }).done(function(response){
                     if (response == "True"){
-                        alert("Reply Sent")
+                        notifyUser("Reply sent", "success")
                         location.reload()
                     }else{
-                        alert("Reply Could Not Be Sent")
+                        notifyUser("Reply could not be sent", "error")
                     }
                 }).fail(function(response){
-                    alert("Error Occured. ")
+                    notifyUser("An error occurred. Please try again", "error")
                 })
           })
       })

@@ -1889,4 +1889,68 @@ class SecurityHardeningTests(TestCase):
             'gender': 'M', 'address': 'addr', 'contact_number': '555',
         })
         self.assertEqual(response.status_code, 302)
+
+
+class UXImprovementTests(TestCase):
+    """Regression coverage for the product/UX pass: global search and
+    flagging contested (same-student, multiple-pending-parent) link
+    requests in the approval queue."""
+
+    def setUp(self):
+        self.admin_user = make_admin("ux_admin@example.com")
+        self.course = make_course("UX Course")
+        self.session = make_session()
+        self.student = make_student("findme_kid@example.com", self.course, self.session)
+        self.client.login(username="ux_admin@example.com", password=PASSWORD)
+
+    def test_global_search_finds_matching_student(self):
+        response = self.client.get(reverse('global_search'), {'q': 'findme'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'findme_kid@example.com')
+
+    def test_global_search_no_query_shows_no_results(self):
+        response = self.client.get(reverse('global_search'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['results']), 0)
+
+    def test_global_search_is_admin_only(self):
+        make_staff("ux_search_staff@example.com", self.course)
+        self.client.logout()
+        self.client.login(username="ux_search_staff@example.com", password=PASSWORD)
+        response = self.client.get(reverse('global_search'), {'q': 'findme'})
+        self.assertRedirects(response, reverse('staff_home'))
+
+    def test_contested_link_requests_are_flagged(self):
+        # Two different parents both request the same student - the admin
+        # should see this flagged, not have to notice it by eye.
+        self.client.post(reverse('parent_register'), {
+            'first_name': 'A', 'last_name': 'Parent', 'email': 'contested_a@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
+        })
+        self.client.post(reverse('parent_register'), {
+            'first_name': 'B', 'last_name': 'Parent', 'email': 'contested_b@example.com',
+            'gender': 'F', 'address': 'addr', 'password': PASSWORD, 'contact_number': '556',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'mother', 'child-0-date_of_birth': '2015-06-01',
+        })
+        response = self.client.get(reverse('view_parent_link_requests'))
+        self.assertContains(response, 'Also requested by another parent')
+
+    def test_uncontested_link_request_is_not_flagged(self):
+        self.client.post(reverse('parent_register'), {
+            'first_name': 'Solo', 'last_name': 'Parent', 'email': 'solo_parent@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
+        })
+        response = self.client.get(reverse('view_parent_link_requests'))
+        self.assertNotContains(response, 'Also requested by another parent')
         self.assertFalse(NotificationParent.objects.exists())

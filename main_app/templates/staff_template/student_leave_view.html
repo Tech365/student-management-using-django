@@ -125,16 +125,16 @@
         }
     }).done(function(response){
         if (response == "True"){
-            alert("Leave Response Has Been Saved!")
+            notifyUser("Leave response saved", "success")
             location.reload()
         }else{
-            alert("Reply Could Not Be Sent")
+            notifyUser("Reply could not be sent", "error")
         }
     }).fail(function(response){
-        alert("Error Occured. ")
+        notifyUser("An error occurred. Please try again", "error")
     })
 }else{
-    alert("Choose valid response")
+    notifyUser("Choose Approve or Reject first", "warning")
 }
 
           })

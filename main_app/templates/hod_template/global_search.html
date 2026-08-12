@@ -1,0 +1,59 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Search results for &ldquo;{{ query }}&rdquo;</h3>
+                    </div>
+                    <div class="card-body">
+                        {% if not query %}
+                        <p class="text-muted">Enter a name or email above to search across Admins, Staff, Students, and Parents.</p>
+                        {% elif not results %}
+                        <p class="text-muted">No matches for &ldquo;{{ query }}&rdquo;.</p>
+                        {% else %}
+                        <table class="table table-bordered table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Full Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in results %}
+                                <tr>
+                                    <td>{{ row.user.last_name }}, {{ row.user.first_name }}</td>
+                                    <td>{{ row.user.email }}</td>
+                                    <td>{{ row.role_label }}</td>
+                                    <td>
+                                        {% if row.user.is_active %}
+                                        <span class="badge badge-success">Active</span>
+                                        {% else %}
+                                        <span class="badge badge-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if row.edit_url %}
+                                        <a href="{{ row.edit_url }}" class="btn btn-primary btn-sm">Edit</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

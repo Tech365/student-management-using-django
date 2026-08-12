@@ -161,7 +161,7 @@
 
                 }
             }).fail(function(response){
-                alert("Error While Fetching Data")
+                notifyUser("Error while fetching data", "error")
                 $("#error_attendance").html("")
                 $("#error_attendance").show()
                 $("#attendance_block").hide()
@@ -174,7 +174,7 @@
             var attendance_date = $("#attendance_date").val()
             $("#student_data").html(null)
 if (attendance_date.length  == 0){
-    alert("Please Choose A Date");
+    notifyUser("Please choose a date", "warning");
     $("#save_attendance").hide()
 
     return false;
@@ -188,7 +188,7 @@ if (attendance_date.length  == 0){
             }).done(function (response) {
                 var json_data = JSON.parse(response)
                 if (json_data.length < 1) {
-                    alert("No data to display")
+                    notifyUser("No data to display", "warning")
             $("#save_attendance").hide()
 
                 } else {
@@ -208,13 +208,13 @@ if (attendance_date.length  == 0){
                     $("#student_data").html(div_data)
                 }
             }).fail(function (response) {
-                alert("Error in fetching students")
+                notifyUser("Error fetching students", "error")
             })
 
         })
         $(document).on('click', '#save_attendance', function () {
-            //$(this).attr("disabled","disabled")
-            $(this).text("Updating Attendance Data...")
+            var $btn = $(this)
+            $btn.text("Updating Attendance Data...")
             var student_data = $("input[name='student_data[]']:not(:disabled)").map(function () {
                 if ($(this).is(":checked")){
                 return {'id':$(this).val(), 'status': 1};
@@ -223,7 +223,7 @@ if (attendance_date.length  == 0){
                 return {'id':$(this).val(), 'status': 0};
 
             }).get()
-      
+
             student_data = JSON.stringify(student_data)
             var attendance_date = $("#attendance_date").val()
             $.ajax({
@@ -235,14 +235,18 @@ if (attendance_date.length  == 0){
                 }
             }).done(function (response) {
                 if (response == 'OK'){
-                    alert("Updated")
+                    notifyUser("Attendance updated", "success")
+                    // Re-fetch in place rather than reloading, so the
+                    // class/subject/session/date selection isn't lost.
+                    $("#fetch_student").click()
                 }else{
-                    alert("Error. Please try again")
+                    notifyUser("Error updating attendance. Please try again", "error")
                 }
-                location.reload()
-                
+                $btn.text("Save Attendance")
+
             }).fail(function (response) {
-                alert("Error in saving attendance")
+                notifyUser("Error saving attendance", "error")
+                $btn.text("Save Attendance")
             })
 
         })

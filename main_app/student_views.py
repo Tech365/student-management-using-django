@@ -183,7 +183,7 @@ def student_view_profile(request):
                 messages.success(request, "Profile Updated!")
                 return redirect(reverse('student_view_profile'))
             else:
-                messages.error(request, "Invalid Data Provided")
+                messages.error(request, "Please check the form - some required fields are missing or invalid.")
         except Exception as e:
             logger.exception('Unhandled error in student_view_profile')
             messages.error(request, "Error Occurred While Updating Profile " + str(e))

@@ -111,14 +111,14 @@
         }).done(function (response) {
            
           if (response == 'True'){
-            alert("Notification Sent");
+            notifyUser("Notification sent", "success");
             location.reload();
           }else{
-            alert("Notification could not be saved. Please try again.");
+            notifyUser("Notification could not be saved. Please try again.", "error");
           }
-           
+
         }).fail(function (response) {
-            alert("Error in saving token")
+            notifyUser("Error sending notification", "error")
         })
 
     }

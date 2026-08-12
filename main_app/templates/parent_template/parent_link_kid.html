@@ -20,6 +20,10 @@
                         {% if formset.non_form_errors %}
                         <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
                         {% endif %}
+                        <p class="text-muted" style="font-size: 13px;">
+                            Search your child by class, then confirm their name. Their date of birth
+                            helps the school verify it's really your child before approving the link.
+                        </p>
                         <form method="post">
                             {% csrf_token %}
                             <div id="children-container">

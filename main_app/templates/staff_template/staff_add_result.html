@@ -74,7 +74,7 @@
             var session = $("#session").val()
             $("#student_data").html(null)
 if (subject.length  == 0 || session.length == 0){
-    alert("Please select session and subject");
+    notifyUser("Please select session and subject", "warning");
     return false;
 }
             $.ajax({
@@ -87,7 +87,7 @@ if (subject.length  == 0 || session.length == 0){
             }).done(function (response) {
                 var json_data = JSON.parse(response)
                 if (json_data.length < 1) {
-                    alert("No data to display")
+                    notifyUser("No data to display", "warning")
                 } else {
                     var div_data = "<hr/><div class='form-group'> <label> Student List</label> <select class='student_list form-control' name='student_list'> "
 
@@ -99,12 +99,8 @@ if (subject.length  == 0 || session.length == 0){
                     $("#student_data").html(div_data)
                 }
             }).fail(function (response) {
-                alert("Error in fetching students")
+                notifyUser("Error fetching students", "error")
             })
-
-
-
-
         })
     })
 </script>

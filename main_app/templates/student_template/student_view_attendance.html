@@ -96,7 +96,7 @@
             var start_date = $("#start_date").val()
             var end_date = $("#end_date").val()
             if (subject.length  == 0 || end_date.length ==0 ||start_date.length == 0){
-                alert("Please Select Subject and Date Range");
+                notifyUser("Please select a subject and date range", "warning");
                 return false;
             }
             $("#attendance_data").html(null)

@@ -80,7 +80,7 @@ def parent_register(request):
                 # for already-authenticated admin/staff/student users.
                 messages.error(request, "Could not complete registration. Please try again.")
         else:
-            messages.error(request, "Please fill the form properly")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
     return render(request, "main_app/parent_register.html", context)
 
 
@@ -150,7 +150,7 @@ def parent_link_kid(request):
                 logger.exception('Unhandled error in parent_link_kid')
                 messages.error(request, "Could not submit - you may have already requested one of these students.")
         else:
-            messages.error(request, "Please fill the form properly")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
     return render(request, "parent_template/parent_link_kid.html", context)
 
 
@@ -190,7 +190,7 @@ def parent_view_profile(request):
                 messages.success(request, "Profile Updated!")
                 return redirect(reverse('parent_view_profile'))
             else:
-                messages.error(request, "Invalid Data Provided")
+                messages.error(request, "Please check the form - some required fields are missing or invalid.")
                 return render(request, "parent_template/parent_view_profile.html", context)
         except Exception as e:
             logger.exception('Unhandled error in parent_view_profile')

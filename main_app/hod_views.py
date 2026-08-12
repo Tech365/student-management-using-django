@@ -27,8 +27,8 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
 from .utils import (csv_response, leave_decision_message, log_action,
                     notify_student_leave_decision, paginate,
                     parent_link_decision_message, read_csv_rows,
-                    send_notification_email, session_course_ids_map,
-                    staff_class_names_map)
+                    send_notification_email, send_push_notification,
+                    session_course_ids_map, staff_class_names_map)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
@@ -69,6 +69,36 @@ def admin_home(request):
     return render(request, 'hod_template/home_content.html', context)
 
 
+def global_search(request):
+    """Search by name/email across every role at once - the fastest path
+    to "someone called about their kid, pull up their record" without
+    knowing which class/role to look under first."""
+    query = request.GET.get('q', '').strip()
+    results = []
+    if query:
+        matches = CustomUser.objects.filter(
+            Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(email__icontains=query)
+        ).select_related('admin', 'staff', 'student', 'parent').order_by('last_name', 'first_name')[:50]
+        role_edit_url = {'1': 'edit_admin', '2': 'edit_staff', '3': 'edit_student', '4': 'edit_parent'}
+        role_label = {'1': 'Admin', '2': 'Staff', '3': 'Student', '4': 'Parent'}
+        for user in matches:
+            role_object = {'1': getattr(user, 'admin', None), '2': getattr(user, 'staff', None),
+                            '3': getattr(user, 'student', None), '4': getattr(user, 'parent', None)}.get(user.user_type)
+            if role_object is None:
+                continue
+            results.append({
+                'user': user,
+                'role_label': role_label.get(user.user_type, 'Unknown'),
+                'edit_url': reverse(role_edit_url[user.user_type], args=[role_object.id]) if user.user_type in role_edit_url else None,
+            })
+    context = {
+        'query': query,
+        'results': results,
+        'page_title': 'Search',
+    }
+    return render(request, 'hod_template/global_search.html', context)
+
+
 def add_admin(request):
     form = AdminForm(request.POST or None, request.FILES or None)
     context = {'form': form, 'page_title': 'Add Admin'}
@@ -99,9 +129,9 @@ def add_admin(request):
 
             except Exception as e:
                 logger.exception('Unhandled error in add_admin')
-                messages.error(request, "Could Not Add " + str(e))
+                messages.error(request, "Couldn't save this - " + str(e))
         else:
-            messages.error(request, "Please fulfil all requirements")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
 
     return render(request, 'hod_template/add_admin_template.html', context)
 
@@ -133,9 +163,9 @@ def add_staff(request):
 
             except Exception as e:
                 logger.exception('Unhandled error in add_staff')
-                messages.error(request, "Could Not Add " + str(e))
+                messages.error(request, "Couldn't save this - " + str(e))
         else:
-            messages.error(request, "Please fulfil all requirements")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
 
     return render(request, 'hod_template/add_staff_template.html', context)
 
@@ -170,9 +200,9 @@ def add_student(request):
                 return redirect(reverse('add_student'))
             except Exception as e:
                 logger.exception('Unhandled error in add_student')
-                messages.error(request, "Could Not Add: " + str(e))
+                messages.error(request, "Couldn't save this - " + str(e))
         else:
-            messages.error(request, "Could Not Add: ")
+            messages.error(request, "Couldn't save this. Please check the form and try again.")
     return render(request, 'hod_template/add_student_template.html', context)
 
 
@@ -194,9 +224,9 @@ def add_course(request):
                 return redirect(reverse('add_course'))
             except:
                 logger.exception('Unhandled error in add_course')
-                messages.error(request, "Could Not Add")
+                messages.error(request, "Couldn't save this. Please check the form and try again.")
         else:
-            messages.error(request, "Could Not Add")
+            messages.error(request, "Couldn't save this. Please check the form and try again.")
     return render(request, 'hod_template/add_course_template.html', context)
 
 
@@ -223,7 +253,7 @@ def add_subject(request):
 
             except Exception as e:
                 logger.exception('Unhandled error in add_subject')
-                messages.error(request, "Could Not Add " + str(e))
+                messages.error(request, "Couldn't save this - " + str(e))
         else:
             messages.error(request, "Fill Form Properly")
 
@@ -408,17 +438,18 @@ def bulk_upload_students(request):
 
 
 def manage_admin(request):
-    admins = paginate(request, CustomUser.objects.filter(user_type=1).select_related('admin').order_by('id'))
+    # No paginate() here - DataTables (see main_app/templates/main_app/base.html)
+    # owns search/sort/paging for this table client-side, over the full list.
+    admins = CustomUser.objects.filter(user_type=1).select_related('admin').order_by('id')
     context = {
         'admins': admins,
-        'page_obj': admins,
         'page_title': 'Manage Admins'
     }
     return render(request, "hod_template/manage_admin.html", context)
 
 
 def manage_parent(request):
-    parents = paginate(request, CustomUser.objects.filter(user_type=4).select_related('parent').order_by('id'))
+    parents = CustomUser.objects.filter(user_type=4).select_related('parent').order_by('id')
     links_by_parent = {}
     for link in ParentStudentLink.objects.filter(parent__admin__in=parents).select_related('student__admin'):
         links_by_parent.setdefault(link.parent_id, []).append(link)
@@ -426,20 +457,18 @@ def manage_parent(request):
         user.links = links_by_parent.get(user.parent.id, [])
     context = {
         'parents': parents,
-        'page_obj': parents,
         'page_title': 'Manage Parents'
     }
     return render(request, "hod_template/manage_parent.html", context)
 
 
 def manage_staff(request):
-    allStaff = paginate(request, CustomUser.objects.filter(user_type=2).select_related('staff').order_by('id'))
+    allStaff = CustomUser.objects.filter(user_type=2).select_related('staff').order_by('id')
     classes_by_staff = staff_class_names_map([user.staff.id for user in allStaff])
     for user in allStaff:
         user.class_names = classes_by_staff.get(user.staff.id, '—')
     context = {
         'allStaff': allStaff,
-        'page_obj': allStaff,
         'page_title': 'Manage Staff'
     }
     return render(request, "hod_template/manage_staff.html", context)
@@ -457,10 +486,9 @@ def manage_staff_csv(request):
 
 
 def manage_student(request):
-    students = paginate(request, CustomUser.objects.filter(user_type=3).select_related('student', 'student__course', 'student__session').order_by('id'))
+    students = CustomUser.objects.filter(user_type=3).select_related('student', 'student__course', 'student__session').order_by('id')
     context = {
         'students': students,
-        'page_obj': students,
         'page_title': 'Manage Students'
     }
     return render(request, "hod_template/manage_student.html", context)
@@ -481,20 +509,18 @@ def manage_student_csv(request):
 
 
 def manage_course(request):
-    courses = paginate(request, Course.objects.order_by('id'))
+    courses = Course.objects.order_by('id')
     context = {
         'courses': courses,
-        'page_obj': courses,
         'page_title': 'Manage Classes'
     }
     return render(request, "hod_template/manage_course.html", context)
 
 
 def manage_subject(request):
-    subjects = paginate(request, Subject.objects.order_by('id'))
+    subjects = Subject.objects.order_by('id')
     context = {
         'subjects': subjects,
-        'page_obj': subjects,
         'page_title': 'Manage Subjects'
     }
     return render(request, "hod_template/manage_subject.html", context)
@@ -537,9 +563,9 @@ def edit_staff(request, staff_id):
                 return redirect(reverse('edit_staff', args=[staff_id]))
             except Exception as e:
                 logger.exception('Unhandled error in edit_staff')
-                messages.error(request, "Could Not Update " + str(e))
+                messages.error(request, "Couldn't save your changes - " + str(e))
         else:
-            messages.error(request, "Please fill the form properly")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
         return render(request, "hod_template/edit_staff_template.html", context)
     else:
         return render(request, "hod_template/edit_staff_template.html", context)
@@ -587,9 +613,9 @@ def edit_student(request, student_id):
                 return redirect(reverse('edit_student', args=[student_id]))
             except Exception as e:
                 logger.exception('Unhandled error in edit_student')
-                messages.error(request, "Could Not Update " + str(e))
+                messages.error(request, "Couldn't save your changes - " + str(e))
         else:
-            messages.error(request, "Please Fill Form Properly!")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
         return render(request, "hod_template/edit_student_template.html", context)
     else:
         return render(request, "hod_template/edit_student_template.html", context)
@@ -636,9 +662,9 @@ def edit_admin(request, admin_id):
                 return redirect(reverse('edit_admin', args=[admin_id]))
             except Exception as e:
                 logger.exception('Unhandled error in edit_admin')
-                messages.error(request, "Could Not Update " + str(e))
+                messages.error(request, "Couldn't save your changes - " + str(e))
         else:
-            messages.error(request, "Please fill the form properly")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
         return render(request, "hod_template/edit_admin_template.html", context)
     else:
         return render(request, "hod_template/edit_admin_template.html", context)
@@ -686,9 +712,9 @@ def edit_parent(request, parent_id):
                 return redirect(reverse('edit_parent', args=[parent_id]))
             except Exception as e:
                 logger.exception('Unhandled error in edit_parent')
-                messages.error(request, "Could Not Update " + str(e))
+                messages.error(request, "Couldn't save your changes - " + str(e))
         else:
-            messages.error(request, "Please fill the form properly")
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
         return render(request, "hod_template/edit_parent_template.html", context)
     else:
         return render(request, "hod_template/edit_parent_template.html", context)
@@ -713,9 +739,9 @@ def edit_course(request, course_id):
                 messages.success(request, "Successfully Updated")
             except:
                 logger.exception('Unhandled error in edit_course')
-                messages.error(request, "Could Not Update")
+                messages.error(request, "Couldn't save your changes. Please check the form and try again.")
         else:
-            messages.error(request, "Could Not Update")
+            messages.error(request, "Couldn't save your changes. Please check the form and try again.")
 
     return render(request, 'hod_template/edit_course_template.html', context)
 
@@ -744,7 +770,7 @@ def edit_subject(request, subject_id):
                 return redirect(reverse('edit_subject', args=[subject_id]))
             except Exception as e:
                 logger.exception('Unhandled error in edit_subject')
-                messages.error(request, "Could Not Add " + str(e))
+                messages.error(request, "Couldn't save this - " + str(e))
         else:
             messages.error(request, "Fill Form Properly")
     return render(request, 'hod_template/edit_subject_template.html', context)
@@ -762,15 +788,15 @@ def add_session(request):
                 return redirect(reverse('add_session'))
             except Exception as e:
                 logger.exception('Unhandled error in add_session')
-                messages.error(request, 'Could Not Add ' + str(e))
+                messages.error(request, "Couldn't save this - " + str(e))
         else:
             messages.error(request, 'Fill Form Properly ')
     return render(request, "hod_template/add_session_template.html", context)
 
 
 def manage_session(request):
-    sessions = paginate(request, Session.objects.order_by('id'))
-    context = {'sessions': sessions, 'page_obj': sessions, 'page_title': 'Manage Sessions'}
+    sessions = Session.objects.order_by('id')
+    context = {'sessions': sessions, 'page_title': 'Manage Sessions'}
     return render(request, "hod_template/manage_session.html", context)
 
 
@@ -927,6 +953,16 @@ def view_parent_link_requests(request):
     if request.method != 'POST':
         allLinks = paginate(request, ParentStudentLink.objects.select_related(
             'parent__admin', 'student__admin').order_by('id'))
+        # More than one PENDING request for the same student is exactly the
+        # case an admin most needs to notice - e.g. two different accounts
+        # claiming the same kid with mismatched self-reported DOBs - so flag
+        # it rather than relying on spotting it by eye across a paginated list.
+        pending_student_counts = {}
+        for student_id in ParentStudentLink.objects.filter(status=0).values_list('student_id', flat=True):
+            pending_student_counts[student_id] = pending_student_counts.get(student_id, 0) + 1
+        contested_student_ids = {sid for sid, count in pending_student_counts.items() if count > 1}
+        for link in allLinks:
+            link.is_contested = link.status == 0 and link.student_id in contested_student_ids
         context = {
             'allLinks': allLinks,
             'page_obj': allLinks,
@@ -957,6 +993,7 @@ def view_parent_link_requests(request):
             message = parent_link_decision_message(link.student, status)
             NotificationParent.objects.create(parent=link.parent, message=message)
             send_notification_email(link.parent.admin, message)
+            send_push_notification(link.parent.admin, message, 'parent_view_notification')
             log_action(request, 'approved' if status == 1 else 'rejected', 'ParentStudentLink', link)
             return HttpResponse(True)
         except Exception:
@@ -1041,7 +1078,7 @@ def admin_view_profile(request):
                 messages.success(request, "Profile Updated!")
                 return redirect(reverse('admin_view_profile'))
             else:
-                messages.error(request, "Invalid Data Provided")
+                messages.error(request, "Please check the form - some required fields are missing or invalid.")
         except Exception as e:
             logger.exception('Unhandled error in admin_view_profile')
             messages.error(
