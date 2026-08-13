@@ -11,10 +11,11 @@ from django.urls import reverse
 
 from .forms import (LeaveReportStudentForm, ParentEditForm,
                     ParentLinkRequestFormSet, ParentRegistrationForm)
-from .models import (Attendance, AttendanceReport, Course, CustomUser,
+from .models import (Attendance, Course, CustomUser,
                      LeaveReportStudent, NotificationParent, NotificationStaff,
                      Parent, ParentStudentLink, Staff, Student, Subject)
-from .utils import log_action, parent_can_access_student, rate_limited, send_notification_email
+from .utils import (attendance_with_leave_json, log_action, parent_can_access_student,
+                    rate_limited, send_notification_email)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 
@@ -234,9 +235,7 @@ def parent_view_attendance(request):
             start_date = datetime.strptime(start, "%Y-%m-%d")
             end_date = datetime.strptime(end, "%Y-%m-%d")
             attendance = Attendance.objects.filter(date__range=(start_date, end_date), subject=subject)
-            attendance_reports = AttendanceReport.objects.filter(attendance__in=attendance, student=student)
-            json_data = [{"date": str(report.attendance.date), "status": report.status}
-                         for report in attendance_reports]
+            json_data = attendance_with_leave_json(student, attendance)
             return JsonResponse(json.dumps(json_data), safe=False)
         except Exception as e:
             logger.exception("Failed to fetch parent-viewed attendance")

@@ -16,7 +16,7 @@ from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      FeedbackStudent, LeaveReportStudent, NotificationStaff,
                      NotificationStudent, Staff, Student, StudentResult,
                      Subject)
-from .utils import send_notification_email
+from .utils import attendance_with_leave_json, send_notification_email
 
 logger = logging.getLogger(__name__)
 
@@ -75,15 +75,7 @@ def student_view_attendance(request):
             end_date = datetime.strptime(end, "%Y-%m-%d")
             attendance = Attendance.objects.filter(
                 date__range=(start_date, end_date), subject=subject)
-            attendance_reports = AttendanceReport.objects.filter(
-                attendance__in=attendance, student=student)
-            json_data = []
-            for report in attendance_reports:
-                data = {
-                    "date":  str(report.attendance.date),
-                    "status": report.status
-                }
-                json_data.append(data)
+            json_data = attendance_with_leave_json(student, attendance)
             return JsonResponse(json.dumps(json_data), safe=False)
         except Exception as e:
             logger.exception("Failed to fetch student attendance")

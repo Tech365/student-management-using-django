@@ -23,6 +23,16 @@
     box-shadow: 1px 1px 1px grey;
     margin: 5px;
 }
+.attendance_div_yellow{
+    padding: 10px;
+    background: #ff9800;
+    border: 3px solid white;
+    text-align: center;
+    color: #fff;
+    border-radius: 30px;
+    box-shadow: 1px 1px 1px grey;
+    margin: 5px;
+}
 </style>
 {% endblock custom_css %}
 
@@ -118,7 +128,9 @@
                 } else {
                     var div_data = "";
                     for (key in json_data) {
-                        if (json_data[key]['status']) {
+                        if (json_data[key]['status'] === 'leave') {
+                            div_data += "<div class='col-lg-3 attendance_div_yellow'><b>" + json_data[key]['date'] + "</b><br/>Leave</div>";
+                        } else if (json_data[key]['status']) {
                             div_data += "<div class='col-lg-3 attendance_div_green'><b>" + json_data[key]['date'] + "</b><br/>Present</div>";
                         } else {
                             div_data += "<div class='col-lg-3 attendance_div_red'><b>" + json_data[key]['date'] + "</b><br/>Absent</div>";

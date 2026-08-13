@@ -72,6 +72,20 @@ def make_student(email, course, session):
     return student
 
 
+def make_parent(email, linked_student=None):
+    user = CustomUser.objects.create_user(
+        email=email, password=PASSWORD, user_type=4,
+        first_name="Parent", last_name=email.split('@')[0],
+    )
+    parent = user.parent
+    if linked_student is not None:
+        ParentStudentLink.objects.create(
+            parent=parent, student=linked_student, relationship='father',
+            date_of_birth=datetime.date(2015, 1, 1), status=1,
+        )
+    return parent
+
+
 class UserProfileSignalTests(TestCase):
     def test_creating_staff_user_creates_staff_profile(self):
         user = CustomUser.objects.create_user(
@@ -495,6 +509,52 @@ class AdminViewAttendanceLeaveTests(TestCase):
         })
         rows = json.loads(response.json())
         self.assertEqual(rows[0]['status'], 'On Leave')
+
+
+class StudentAndParentAttendanceHistoryLeaveTests(TestCase):
+    """A student on approved leave never gets an AttendanceReport (see
+    SaveAttendanceTests), so student_view_attendance/parent_view_attendance
+    used to just silently drop those dates from the history instead of
+    showing them as Leave the way the teacher's/admin's own attendance
+    screens already do (see ViewUpdateAttendanceLeaveTests /
+    AdminViewAttendanceLeaveTests)."""
+
+    def setUp(self):
+        self.course = make_course()
+        self.session = make_session()
+        self.staff = make_staff("history_leave_staff@example.com", self.course)
+        self.subject = Subject.objects.create(name="History", staff=self.staff, course=self.course)
+        self.student = make_student("history_leave_student@example.com", self.course, self.session)
+        self.present_attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=datetime.date(2026, 8, 8))
+        AttendanceReport.objects.create(
+            student=self.student, attendance=self.present_attendance, status=True)
+        self.leave_attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=datetime.date(2026, 8, 9))
+        LeaveReportStudent.objects.create(
+            student=self.student, date="2026-08-09", message="Sick", status=1)
+
+    def _fetch(self, url, extra=None):
+        return self.client.post(reverse(url), {
+            'subject': self.subject.id,
+            'start_date': '2026-08-01', 'end_date': '2026-08-31',
+            **(extra or {}),
+        })
+
+    def test_student_attendance_history_shows_leave_day(self):
+        self.client.login(username="history_leave_student@example.com", password=PASSWORD)
+        response = self._fetch('student_view_attendance')
+        rows = {row['date']: row['status'] for row in json.loads(response.json())}
+        self.assertEqual(rows['2026-08-08'], True)
+        self.assertEqual(rows['2026-08-09'], 'leave')
+
+    def test_parent_attendance_history_shows_leave_day(self):
+        parent = make_parent("history_leave_parent@example.com", linked_student=self.student)
+        self.client.login(username="history_leave_parent@example.com", password=PASSWORD)
+        response = self._fetch('parent_view_attendance', {'student': self.student.id})
+        rows = {row['date']: row['status'] for row in json.loads(response.json())}
+        self.assertEqual(rows['2026-08-08'], True)
+        self.assertEqual(rows['2026-08-09'], 'leave')
 
 
 class StudentViewAttendanceCourselessTests(TestCase):
@@ -1579,6 +1639,32 @@ class ParentFeatureTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertFalse(CustomUser.objects.filter(email='no_child_parent@example.com').exists())
+
+    def test_registration_rejects_non_numeric_contact_number(self):
+        data = {
+            'first_name': 'New', 'last_name': 'Parent', 'email': 'bad_contact_parent@example.com',
+            'gender': 'M', 'address': '1 Test St', 'password': PASSWORD,
+            'contact_number': '555-1234',
+            'child-TOTAL_FORMS': '1', 'child-INITIAL_FORMS': '0',
+            'child-MIN_NUM_FORMS': '0', 'child-MAX_NUM_FORMS': '1000',
+            'child-0-course': self.course.id, 'child-0-student': self.student.id,
+            'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
+        }
+        response = self.client.post(reverse('parent_register'), data)
+        self.assertEqual(response.status_code, 200)  # re-rendered with errors, not redirected
+        self.assertFalse(CustomUser.objects.filter(email='bad_contact_parent@example.com').exists())
+
+    def test_edit_parent_rejects_non_numeric_contact_number(self):
+        self._register_parent()
+        parent = Parent.objects.get(admin__email="new_parent@example.com")
+        self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('edit_parent', args=[parent.id]), {
+            'first_name': 'New', 'last_name': 'Parent', 'email': 'new_parent@example.com',
+            'gender': 'M', 'address': '1 Test St', 'contact_number': 'not-a-number',
+        })
+        self.assertEqual(response.status_code, 200)
+        parent.refresh_from_db()
+        self.assertEqual(parent.contact_number, '5551234')  # unchanged
 
     def test_link_another_kid_supports_multiple_children_at_once(self):
         second_student = make_student("parent_feature_kid3@example.com", self.course, self.session)

@@ -200,6 +200,41 @@ def parent_can_access_student(parent, student_id):
     return link.student if link else None
 
 
+def attendance_with_leave_json(student, attendance_qs):
+    """Per-date attendance history for `student` across `attendance_qs` (an
+    Attendance queryset already scoped to one subject/date range), with
+    status "leave" filled in for dates the student has an approved leave
+    for.
+
+    A student on approved leave never gets an AttendanceReport row at all
+    (see staff_views.save_attendance/update_attendance) - without this,
+    those days would just silently vanish from the student's/parent's own
+    attendance history instead of showing as Leave, the way the teacher's
+    take/update-attendance screens already display it via on_leave_ids.
+    """
+    from .models import AttendanceReport, LeaveReportStudent
+    attendance_by_id = {a.id: a for a in attendance_qs}
+    reports = {
+        r.attendance_id: r.status
+        for r in AttendanceReport.objects.filter(attendance__in=attendance_by_id.values(), student=student)
+    }
+    leave_dates = set(
+        LeaveReportStudent.objects.filter(
+            student=student, status=1,
+            date__in=[a.date.isoformat() for a in attendance_by_id.values()],
+        ).values_list('date', flat=True)
+    )
+    json_data = []
+    for attendance_id, attendance in attendance_by_id.items():
+        date_str = attendance.date.isoformat()
+        if attendance_id in reports:
+            json_data.append({"date": date_str, "status": reports[attendance_id]})
+        elif date_str in leave_dates:
+            json_data.append({"date": date_str, "status": "leave"})
+    json_data.sort(key=lambda d: d["date"])
+    return json_data
+
+
 def session_course_ids_map():
     """Map of Session.id -> set of Course ids with at least one Student
     enrolled in that session. A class isn't tied to one session (it

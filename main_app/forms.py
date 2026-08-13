@@ -224,7 +224,28 @@ class StaffEditForm(CustomUserForm):
         fields = CustomUserForm.Meta.fields
 
 
-class ParentRegistrationForm(CustomUserForm):
+class ContactNumberValidationMixin:
+    """Shared by both places a Parent's contact_number is collected -
+    the model field itself is a bare CharField (needs to hold numbers
+    with a leading 0, so it can't be an IntegerField), so nothing else
+    stops someone typing letters into it without this."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Hints mobile browsers to show a numeric keypad - a nicety on
+        # top of clean_contact_number below, which is what actually
+        # enforces this.
+        self.fields['contact_number'].widget.attrs.update(
+            {'inputmode': 'numeric', 'pattern': '[0-9]*'})
+
+    def clean_contact_number(self):
+        contact_number = self.cleaned_data.get('contact_number', '').strip()
+        if not contact_number.isdigit():
+            raise forms.ValidationError("Contact number must contain digits only.")
+        return contact_number
+
+
+class ParentRegistrationForm(ContactNumberValidationMixin, CustomUserForm):
     """Public self-registration - unlike every other role here, this
     account isn't created by an HOD who'd have a photo on hand, so a
     fresh photo is never required."""
@@ -238,7 +259,7 @@ class ParentRegistrationForm(CustomUserForm):
         fields = CustomUserForm.Meta.fields + ['contact_number']
 
 
-class ParentEditForm(CustomUserForm):
+class ParentEditForm(ContactNumberValidationMixin, CustomUserForm):
     def __init__(self, *args, **kwargs):
         super(ParentEditForm, self).__init__(*args, **kwargs)
 
