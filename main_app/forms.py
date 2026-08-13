@@ -295,10 +295,15 @@ class ParentLinkRequestForm(forms.Form):
 
 # A parent can have more than one kid at the school, so both registration
 # and "link another kid" let them submit several ParentLinkRequestForms at
-# once (min_num=1/validate_min: at least one child is required; extra=1:
-# one block shown by default, with more added client-side).
+# once (min_num=1/validate_min: at least one child is required). extra=0,
+# not 1: Django's own form count is max(initial_forms, min_num) + extra,
+# so extra=1 here would render min_num(1) + extra(1) = 2 blocks by
+# default - forcing every parent to fill in a second child before they
+# could submit at all. The one required block still renders correctly
+# because min_num=1 already guarantees it; "+ Add Another Child" clones
+# more in on demand.
 ParentLinkRequestFormSet = forms.formset_factory(
-    ParentLinkRequestForm, extra=1, min_num=1, validate_min=True)
+    ParentLinkRequestForm, extra=0, min_num=1, validate_min=True)
 
 
 class EditResultForm(FormSettings):

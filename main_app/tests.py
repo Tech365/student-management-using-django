@@ -1546,6 +1546,21 @@ class ParentFeatureTests(TestCase):
         link = ParentStudentLink.objects.get(parent=user.parent, student=self.student)
         self.assertEqual(link.status, 0)
 
+    def test_registration_page_get_renders_single_child_form_by_default(self):
+        # Regression test: formset_factory's total form count is
+        # max(initial_form_count(), min_num) + extra, so extra=1 alongside
+        # min_num=1 used to render 2 required child blocks on a fresh GET
+        # instead of 1, forcing every parent to fill in a second kid before
+        # they could submit at all.
+        response = self.client.get(reverse('parent_register'))
+        self.assertEqual(len(response.context['link_formset'].forms), 1)
+
+    def test_link_another_kid_page_get_renders_single_child_form_by_default(self):
+        self._register_parent()
+        self.client.login(username="new_parent@example.com", password=PASSWORD)
+        response = self.client.get(reverse('parent_link_kid'))
+        self.assertEqual(len(response.context['formset'].forms), 1)
+
     def test_registration_supports_multiple_children_in_one_submission(self):
         second_student = make_student("parent_feature_kid2@example.com", self.course, self.session)
         response = self._register_parent(students=[self.student, second_student])
