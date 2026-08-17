@@ -12,6 +12,9 @@
                     <div class="card-header">
                         <h3 class="card-title">{{page_title}}</h3>
                         <div class="card-tools">
+                            <a href="{% url 'add_staff' %}" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-user-plus"></i> Add / Grant Staff
+                            </a>
                             <a href="{% url 'manage_staff_csv' %}" class="btn btn-outline-secondary btn-sm">
                                 <i class="fas fa-download"></i> Export CSV
                             </a>
