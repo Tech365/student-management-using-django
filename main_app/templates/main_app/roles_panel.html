@@ -1,0 +1,30 @@
+{% if current_roles %}
+<div class="card card-secondary mt-3">
+    <div class="card-header">
+        <h3 class="card-title">Roles</h3>
+    </div>
+    <div class="card-body">
+        <p>
+            {% for code, label in current_roles %}
+            <span class="badge badge-info">{{ label }}</span>
+            {% endfor %}
+        </p>
+        {% if missing_roles %}
+        <p class="text-muted mb-2">Grant this person an additional role:</p>
+        {% for code, label in missing_roles %}
+            {% if code == '1' or code == '2' %}
+            <form method="post" action="{% url 'grant_role_quick' user_id=role_user_id role_code=code %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <button type="submit" class="btn btn-outline-primary btn-sm mb-1">Also make {{ label }}</button>
+            </form>
+            {% elif code == '3' %}
+            <a href="{% url 'add_student' %}?email={{ role_user_email|urlencode }}" class="btn btn-outline-primary btn-sm mb-1">Also make Student</a>
+            {% elif code == '4' %}
+            <a href="{% url 'grant_parent_role' %}?email={{ role_user_email|urlencode }}" class="btn btn-outline-primary btn-sm mb-1">Also make Parent</a>
+            {% endif %}
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>
+{% endif %}

@@ -28,6 +28,8 @@ urlpatterns = [
     path("choose-role/", views.choose_role, name='choose_role'),
     path("logout_user/", views.logout_user, name='user_logout'),
     path("admin/home/", hod_views.admin_home, name='admin_home'),
+    path("account/<int:user_id>/grant-role/<str:role_code>/",
+         hod_views.grant_role_quick, name='grant_role_quick'),
     path("admin/search/", hod_views.global_search, name='global_search'),
     path("admin/add/", hod_views.add_admin, name='add_admin'),
     path("staff/add", hod_views.add_staff, name='add_staff'),

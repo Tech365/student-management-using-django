@@ -25,7 +25,7 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      ParentStudentLink, Session, Staff, Student,
                      StudentResult, Subject)
 from .utils import (csv_response, grant_role, leave_decision_message, log_action,
-                    notify_student_leave_decision, paginate,
+                    missing_roles, notify_student_leave_decision, paginate,
                     parent_link_decision_message, read_csv_rows,
                     send_notification_email, send_push_notification,
                     session_course_ids_map, staff_class_names_map, user_roles)
@@ -103,6 +103,18 @@ def global_search(request):
     return render(request, 'hod_template/global_search.html', context)
 
 
+def _role_panel_context(user):
+    """Context for the "Roles" panel every edit_* template includes -
+    shows every role this account already holds, plus a one-click way to
+    grant the ones it doesn't (see grant_role_quick and roles_panel.html)."""
+    return {
+        'current_roles': user_roles(user),
+        'missing_roles': missing_roles(user),
+        'role_user_id': user.id,
+        'role_user_email': user.email,
+    }
+
+
 def _existing_user_for_role_attach(request):
     """The CustomUser already registered under the submitted email, or None
     if this is a POST to create a brand-new account. Also relaxes the
@@ -116,7 +128,8 @@ def _existing_user_for_role_attach(request):
 
 
 def add_admin(request):
-    form = AdminForm(request.POST or None, request.FILES or None)
+    initial = {'email': request.GET['email']} if 'email' in request.GET else None
+    form = AdminForm(request.POST or None, request.FILES or None, initial=initial)
     existing_user = _existing_user_for_role_attach(request)
     if existing_user is not None:
         form.fields['password'].required = False
@@ -166,7 +179,8 @@ def add_admin(request):
 
 
 def add_staff(request):
-    form = StaffForm(request.POST or None, request.FILES or None)
+    initial = {'email': request.GET['email']} if 'email' in request.GET else None
+    form = StaffForm(request.POST or None, request.FILES or None, initial=initial)
     existing_user = _existing_user_for_role_attach(request)
     if existing_user is not None:
         form.fields['password'].required = False
@@ -213,7 +227,8 @@ def add_staff(request):
 
 
 def add_student(request):
-    student_form = StudentForm(request.POST or None, request.FILES or None)
+    initial = {'email': request.GET['email']} if 'email' in request.GET else None
+    student_form = StudentForm(request.POST or None, request.FILES or None, initial=initial)
     existing_user = _existing_user_for_role_attach(request)
     if existing_user is not None:
         student_form.fields['password'].required = False
@@ -266,7 +281,8 @@ def grant_parent_role(request):
     deliberately attach-only (see GrantParentRoleForm's docstring): a
     brand-new Parent identity still only comes from public
     self-registration + the existing link-request/approval flow."""
-    form = GrantParentRoleForm(request.POST or None)
+    initial = {'email': request.GET['email']} if 'email' in request.GET else None
+    form = GrantParentRoleForm(request.POST or None, initial=initial)
     context = {'form': form, 'page_title': 'Grant Parent Role'}
     if request.method == 'POST':
         if form.is_valid():
@@ -288,6 +304,28 @@ def grant_parent_role(request):
         else:
             messages.error(request, "Please check the form - some required fields are missing or invalid.")
     return render(request, 'hod_template/grant_parent_role.html', context)
+
+
+def grant_role_quick(request, user_id, role_code):
+    """One-click "also grant this role" from an edit screen's Roles panel,
+    for roles that need no extra fields beyond the shared account (Admin,
+    Staff). Student needs a course/session and Parent needs a contact
+    number, so those still route through add_student/grant_parent_role -
+    see roles_panel.html."""
+    quick_grantable = {'1': ('Admin', 'admin'), '2': ('Staff', 'staff')}
+    fallback = request.POST.get('next') or reverse('admin_home')
+    if request.method != 'POST' or role_code not in quick_grantable:
+        messages.error(request, "That role can't be granted this way.")
+        return redirect(fallback)
+    label, attr = quick_grantable[role_code]
+    user = get_object_or_404(CustomUser, id=user_id)
+    if hasattr(user, attr):
+        messages.error(request, f"{user} already has the {label} role.")
+    else:
+        grant_role(user, role_code)
+        log_action(request, 'granted', label, user)
+        messages.success(request, f"{label} role added to {user}.")
+    return redirect(fallback)
 
 
 def add_course(request):
@@ -616,7 +654,8 @@ def edit_staff(request, staff_id):
     context = {
         'form': form,
         'staff_id': staff_id,
-        'page_title': 'Edit Staff'
+        'page_title': 'Edit Staff',
+        **_role_panel_context(staff.admin),
     }
     if request.method == 'POST':
         if form.is_valid():
@@ -661,7 +700,8 @@ def edit_student(request, student_id):
     context = {
         'form': form,
         'student_id': student_id,
-        'page_title': 'Edit Student'
+        'page_title': 'Edit Student',
+        **_role_panel_context(student.admin),
     }
     if request.method == 'POST':
         if form.is_valid():
@@ -711,7 +751,8 @@ def edit_admin(request, admin_id):
     context = {
         'form': form,
         'admin_id': admin_id,
-        'page_title': 'Edit Admin'
+        'page_title': 'Edit Admin',
+        **_role_panel_context(admin.admin),
     }
     if request.method == 'POST':
         if form.is_valid():
@@ -760,7 +801,8 @@ def edit_parent(request, parent_id):
     context = {
         'form': form,
         'parent_id': parent_id,
-        'page_title': 'Edit Parent'
+        'page_title': 'Edit Parent',
+        **_role_panel_context(parent.admin),
     }
     if request.method == 'POST':
         if form.is_valid():

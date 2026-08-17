@@ -2319,3 +2319,59 @@ class MultiRoleLoginTests(TestCase):
         response = self.client.get(reverse('staff_home'))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.session['active_role'], '2')
+
+
+class RolePanelTests(TestCase):
+    """The "Roles" panel on every edit_* screen - shows what roles an
+    account already has and offers one-click grants for the rest (Admin/
+    Staff need no extra fields; Student/Parent link out to add_student/
+    grant_parent_role with the email prefilled instead). Addresses the
+    original gap: editing a Staff member had no way to also make them an
+    Admin short of navigating to a separate screen and retyping the email."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin_user = make_admin("rolepanel_admin@example.com")
+        self.client.login(username="rolepanel_admin@example.com", password=PASSWORD)
+        self.course = make_course("Role Panel Course")
+        self.session = make_session()
+
+    def test_edit_staff_shows_grant_links_for_missing_roles(self):
+        staff = make_staff("edit_staff_roles@example.com", self.course)
+        response = self.client.get(reverse('edit_staff', args=[staff.id]))
+        self.assertContains(response, 'Also make Admin')
+        self.assertContains(response, 'Also make Student')
+        self.assertContains(response, 'Also make Parent')
+        self.assertNotContains(response, 'Also make Staff')  # already is one
+
+    def test_grant_role_quick_grants_admin_to_staff_account(self):
+        staff = make_staff("quick_grant@example.com", self.course)
+        response = self.client.post(
+            reverse('grant_role_quick', args=[staff.admin.id, '1']),
+            {'next': reverse('edit_staff', args=[staff.id])})
+        self.assertRedirects(response, reverse('edit_staff', args=[staff.id]))
+        user = CustomUser.objects.get(email="quick_grant@example.com")
+        self.assertTrue(hasattr(user, 'admin'))
+        self.assertTrue(hasattr(user, 'staff'))  # untouched
+
+    def test_grant_role_quick_rejects_role_already_held(self):
+        staff = make_staff("quick_grant_dup@example.com", self.course)
+        response = self.client.post(
+            reverse('grant_role_quick', args=[staff.admin.id, '2']), follow=True)
+        self.assertContains(response, 'already has the Staff role')
+
+    def test_grant_role_quick_rejects_roles_needing_extra_fields(self):
+        staff = make_staff("quick_grant_bad@example.com", self.course)
+        response = self.client.post(
+            reverse('grant_role_quick', args=[staff.admin.id, '3']), follow=True)
+        self.assertContains(response, "be granted this way")
+        user = CustomUser.objects.get(email="quick_grant_bad@example.com")
+        self.assertFalse(hasattr(user, 'student'))
+
+    def test_add_student_prefills_email_from_query_param(self):
+        response = self.client.get(reverse('add_student') + '?email=prefill_target@example.com')
+        self.assertContains(response, 'prefill_target@example.com')
+
+    def test_grant_parent_role_prefills_email_from_query_param(self):
+        response = self.client.get(reverse('grant_parent_role') + '?email=prefill_parent@example.com')
+        self.assertContains(response, 'prefill_parent@example.com')

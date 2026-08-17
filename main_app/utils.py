@@ -202,6 +202,14 @@ def user_roles(user):
     return [(code, label) for code, label, attr in ROLE_MODELS if hasattr(user, attr)]
 
 
+def missing_roles(user):
+    """[(code, label), ...] for roles `user` does NOT currently hold - the
+    complement of user_roles(), used to offer "grant this role too"
+    shortcuts from the Manage/Edit screens."""
+    held = {code for code, _ in user_roles(user)}
+    return [(code, label) for code, label, attr in ROLE_MODELS if code not in held]
+
+
 def grant_role(user, role_code, **extra):
     """Idempotently attach role `role_code` to an existing CustomUser -
     used by the admin-side "add an existing email to another role" flows.
