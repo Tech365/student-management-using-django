@@ -287,6 +287,23 @@ def attendance_with_leave_json(student, attendance_qs):
     return json_data
 
 
+def all_configured_school_weekdays():
+    """Union of every Session's configured school_days, as a sorted list
+    of ints (JS Date.getDay() convention). None if no session has
+    school_days configured at all - used to grey out non-school-days on
+    reports that aren't tied to one specific session (e.g. Attendance Not
+    Taken), so a date is only disabled if EVERY configured session agrees
+    it's not a school day."""
+    from .models import Session
+    configured = Session.objects.exclude(school_days='').values_list('school_days', flat=True)
+    if not configured:
+        return None
+    days = set()
+    for value in configured:
+        days.update(int(d) for d in value.split(',') if d)
+    return sorted(days)
+
+
 def session_course_ids_map():
     """Map of Session.id -> set of Course ids with at least one Student
     enrolled in that session. A class isn't tied to one session (it

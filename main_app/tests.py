@@ -2645,3 +2645,61 @@ class SessionSchoolDaysTests(TestCase):
         self.client.login(username="school_days_teacher@example.com", password=PASSWORD)
         response = self.client.get(reverse('staff_take_attendance'))
         self.assertContains(response, f'data-schooldays="6"')
+
+    def test_take_attendance_date_field_is_flatpickr_ready(self):
+        # Blocking (not just warning) needs a JS calendar, not a native
+        # <input type="date"> - flatpickr enhances a plain text input.
+        course = make_course("Flatpickr Course")
+        make_staff("flatpickr_teacher@example.com", course)
+        self.client.logout()
+        self.client.login(username="flatpickr_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_take_attendance'))
+        self.assertContains(response, "id='attendance_date'")
+        self.assertNotContains(response, 'type="date"')
+
+
+class AllConfiguredSchoolWeekdaysTests(TestCase):
+    """utils.all_configured_school_weekdays() - the union used to grey out
+    dates on reports that aren't tied to one specific session."""
+
+    def test_no_sessions_configured_returns_none(self):
+        from .utils import all_configured_school_weekdays
+        make_session()  # school_days left blank
+        self.assertIsNone(all_configured_school_weekdays())
+
+    def test_single_configured_session_returns_its_days(self):
+        from .utils import all_configured_school_weekdays
+        session = make_session()
+        session.school_days = '6'
+        session.save()
+        self.assertEqual(all_configured_school_weekdays(), [6])
+
+    def test_multiple_sessions_return_the_union(self):
+        from .utils import all_configured_school_weekdays
+        s1 = Session.objects.create(start_year=datetime.date(2024, 1, 1), end_year=datetime.date(2024, 6, 30), school_days='6')
+        s2 = Session.objects.create(start_year=datetime.date(2024, 7, 1), end_year=datetime.date(2024, 12, 31), school_days='0,1')
+        Session.objects.create(start_year=datetime.date(2025, 1, 1), end_year=datetime.date(2025, 6, 30))  # unconfigured, ignored
+        self.assertEqual(all_configured_school_weekdays(), [0, 1, 6])
+
+
+class AttendanceNotTakenSchoolDaysTests(TestCase):
+    """The Attendance Not Taken report's date field is also flatpickr-
+    restricted, using the union of every configured session's school
+    days (see AllConfiguredSchoolWeekdaysTests)."""
+
+    def setUp(self):
+        make_admin("not_taken_days_admin@example.com")
+        self.client.login(username="not_taken_days_admin@example.com", password=PASSWORD)
+
+    def test_school_weekdays_json_reflects_configured_sessions(self):
+        session = make_session()
+        session.school_days = '6'
+        session.save()
+        response = self.client.get(reverse('report_attendance_not_taken'))
+        self.assertEqual(response.context['school_weekdays_json'], '[6]')
+        self.assertContains(response, 'var schoolWeekdays = [6]')
+
+    def test_school_weekdays_json_is_null_when_unconfigured(self):
+        make_session()
+        response = self.client.get(reverse('report_attendance_not_taken'))
+        self.assertEqual(response.context['school_weekdays_json'], 'null')

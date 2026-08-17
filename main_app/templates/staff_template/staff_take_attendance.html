@@ -71,8 +71,8 @@
                         </div>
                         <div class="form-group">
                             <label>Attendance Date</label>
-                            <input type="date" class='form-control' name="attendance_date" id='attendance_date'>
-                            <div id="school_day_warning"></div>
+                            <input type="text" class='form-control' name="attendance_date" id='attendance_date'
+                                   placeholder="Select a date" autocomplete="off">
                         </div>
 
                     </div>
@@ -124,30 +124,40 @@
                 }
             })
             sessionSelect.prop("disabled", false)
+            // The session dropdown was just rebuilt (and reset to
+            // unselected) - drop any stale per-session date restriction
+            // from before the class was switched.
+            updateDatePickerRestriction()
         })
 
-        var DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        // Non-school-days are greyed out and unclickable, not just warned
+        // about - the picker's own "disable" rule is rebuilt every time
+        // the session changes, from that session's data-schooldays.
+        var datePicker = flatpickr("#attendance_date", {
+            dateFormat: "Y-m-d",
+            disable: [],
+        })
 
-        function checkSchoolDay() {
+        function updateDatePickerRestriction() {
             var sessionId = $("#session").val()
-            var dateStr = $("#attendance_date").val()
-            $("#school_day_warning").empty()
-            if (!sessionId || !dateStr) return
-            var schoolDays = ($("#all-sessions option[value='" + sessionId + "']").data("schooldays") + "").trim()
-            if (!schoolDays) return  // unrestricted/not configured for this session
-            var allowed = schoolDays.split(",")
-            // Parsed as local time (not UTC) so the weekday matches the
-            // calendar date the user actually picked.
-            var day = new Date(dateStr + "T00:00:00").getDay()
-            if (allowed.indexOf(String(day)) === -1) {
-                var allowedNames = allowed.map(function (d) { return DAY_NAMES[+d] }).join(", ")
-                $("#school_day_warning").html(
-                    "<div class='alert alert-warning mt-2 mb-0'>" + dateStr + " is a " + DAY_NAMES[day] +
-                    ", but this session's school days are: " + allowedNames + ".</div>")
+            var schoolDays = sessionId
+                ? ($("#all-sessions option[value='" + sessionId + "']").data("schooldays") + "").trim()
+                : ""
+            if (!schoolDays) {
+                datePicker.set('disable', [])
+                return
+            }
+            var allowed = schoolDays.split(",").map(Number)
+            datePicker.set('disable', [function (date) {
+                return allowed.indexOf(date.getDay()) === -1
+            }])
+            // A date picked before narrowing the session down no longer
+            // being valid shouldn't silently stay selected.
+            if (datePicker.selectedDates.length && allowed.indexOf(datePicker.selectedDates[0].getDay()) === -1) {
+                datePicker.clear()
             }
         }
-        $("#session").on("change", checkSchoolDay)
-        $("#attendance_date").on("change", checkSchoolDay)
+        $("#session").on("change", updateDatePickerRestriction)
 
         function renderRoster(payload) {
             var json_data = payload.students

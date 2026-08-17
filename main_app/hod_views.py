@@ -24,8 +24,9 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      NotificationStaff, NotificationStudent, Parent,
                      ParentStudentLink, Session, Staff, Student,
                      StudentResult, Subject)
-from .utils import (csv_response, grant_role, leave_decision_message, log_action,
-                    missing_roles, notify_student_leave_decision, paginate,
+from .utils import (all_configured_school_weekdays, csv_response, grant_role,
+                    leave_decision_message, log_action, missing_roles,
+                    notify_student_leave_decision, paginate,
                     parent_link_decision_message, read_csv_rows,
                     send_notification_email, send_push_notification,
                     session_course_ids_map, staff_class_names_map, user_roles)
@@ -1718,9 +1719,11 @@ def _attendance_not_taken_data(request):
 
 def report_attendance_not_taken(request):
     data = _attendance_not_taken_data(request)
+    school_weekdays = all_configured_school_weekdays()
     context = {
         'page_title': 'Attendance Not Taken',
         'courses': Course.objects.order_by('name'),
+        'school_weekdays_json': json.dumps(school_weekdays),
         **data,
     }
     return render(request, 'hod_template/report_attendance_not_taken.html', context)
