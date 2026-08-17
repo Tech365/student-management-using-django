@@ -168,8 +168,25 @@ class SubjectForm(FormSettings):
 
 
 class SessionForm(FormSettings):
+    # Not the model's plain CharField - a checkbox per weekday is a much
+    # more usable way to pick "which days does this session actually
+    # hold classes on" than typing "0,3,5" into a text box.
+    school_days = forms.MultipleChoiceField(
+        choices=Session.WEEKDAYS, widget=forms.CheckboxSelectMultiple,
+        required=False, label="School Days",
+        help_text="Leave all unchecked for no restriction (the default for sessions created before this existed).")
+
     def __init__(self, *args, **kwargs):
         super(SessionForm, self).__init__(*args, **kwargs)
+        if self.instance.pk and self.instance.school_days:
+            # ModelForm's own model_to_dict-based self.initial already has
+            # a "school_days" entry (the raw comma-string) which otherwise
+            # wins over field.initial when rendering - override that
+            # directly, not the field, or the checkboxes stay unchecked.
+            self.initial['school_days'] = self.instance.school_days.split(',')
+
+    def clean_school_days(self):
+        return ','.join(self.cleaned_data.get('school_days', []))
 
     class Meta:
         model = Session

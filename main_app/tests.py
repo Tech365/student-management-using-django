@@ -2578,3 +2578,70 @@ class CoTeachingTests(TestCase):
         self.assertEqual(response.status_code, 302)
         solo_subject.refresh_from_db()
         self.assertEqual(set(solo_subject.staff.all()), {self.teacher_a, self.teacher_b})
+
+
+class SessionSchoolDaysTests(TestCase):
+    """Session.school_days ("this session only holds class on
+    Saturdays") - a plain comma-separated field on the model, but a
+    checkbox-per-weekday on the form (SessionForm), and used to warn (not
+    block) a teacher on Take Attendance who picks a date that isn't one
+    of the session's configured days."""
+
+    def setUp(self):
+        make_admin("session_days_admin@example.com")
+        self.client.login(username="session_days_admin@example.com", password=PASSWORD)
+
+    def test_add_session_with_school_days(self):
+        response = self.client.post(reverse('add_session'), {
+            'start_year': '2026-01-01', 'end_year': '2026-12-31',
+            'school_days': ['6'],  # Saturday only
+        })
+        self.assertEqual(response.status_code, 302)
+        session = Session.objects.get(start_year='2026-01-01')
+        self.assertEqual(session.school_days, '6')
+        self.assertEqual(session.school_days_display(), 'Saturday')
+
+    def test_add_session_with_no_school_days_is_unrestricted(self):
+        response = self.client.post(reverse('add_session'), {
+            'start_year': '2026-01-01', 'end_year': '2026-12-31',
+        })
+        self.assertEqual(response.status_code, 302)
+        session = Session.objects.get(start_year='2026-01-01')
+        self.assertEqual(session.school_days, '')
+        self.assertEqual(session.school_days_display(), 'Any day')
+
+    def test_edit_session_round_trips_school_days(self):
+        session = make_session()
+        session.school_days = '1,3,5'  # Mon/Wed/Fri
+        session.save()
+
+        response = self.client.get(reverse('edit_session', args=[session.id]))
+        self.assertEqual(
+            set(response.context['form'].initial['school_days']), {'1', '3', '5'})
+
+        response = self.client.post(reverse('edit_session', args=[session.id]), {
+            'start_year': session.start_year, 'end_year': session.end_year,
+            'school_days': ['6'],
+        })
+        self.assertEqual(response.status_code, 302)
+        session.refresh_from_db()
+        self.assertEqual(session.school_days, '6')
+
+    def test_manage_session_shows_school_days(self):
+        session = make_session()
+        session.school_days = '6'
+        session.save()
+        response = self.client.get(reverse('manage_session'))
+        self.assertContains(response, 'Saturday')
+
+    def test_take_attendance_page_exposes_school_days_for_js(self):
+        course = make_course("School Days Course")
+        session = make_session()
+        session.school_days = '6'
+        session.save()
+        teacher = make_staff("school_days_teacher@example.com", course)
+        make_subject("School Days Subject", teacher, course)
+        self.client.logout()
+        self.client.login(username="school_days_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_take_attendance'))
+        self.assertContains(response, f'data-schooldays="6"')

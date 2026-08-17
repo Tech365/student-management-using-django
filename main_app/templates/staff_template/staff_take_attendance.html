@@ -65,13 +65,14 @@
                             </select>
                             <select id='all-sessions' style="display:none;">
                                 {% for session in sessions %}
-                                <option value="{{session.id}}" data-courses="{{session.course_ids_str}}">{{session}}</option>
+                                <option value="{{session.id}}" data-courses="{{session.course_ids_str}}" data-schooldays="{{session.school_days}}">{{session}}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="form-group">
                             <label>Attendance Date</label>
                             <input type="date" class='form-control' name="attendance_date" id='attendance_date'>
+                            <div id="school_day_warning"></div>
                         </div>
 
                     </div>
@@ -124,6 +125,29 @@
             })
             sessionSelect.prop("disabled", false)
         })
+
+        var DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+        function checkSchoolDay() {
+            var sessionId = $("#session").val()
+            var dateStr = $("#attendance_date").val()
+            $("#school_day_warning").empty()
+            if (!sessionId || !dateStr) return
+            var schoolDays = ($("#all-sessions option[value='" + sessionId + "']").data("schooldays") + "").trim()
+            if (!schoolDays) return  // unrestricted/not configured for this session
+            var allowed = schoolDays.split(",")
+            // Parsed as local time (not UTC) so the weekday matches the
+            // calendar date the user actually picked.
+            var day = new Date(dateStr + "T00:00:00").getDay()
+            if (allowed.indexOf(String(day)) === -1) {
+                var allowedNames = allowed.map(function (d) { return DAY_NAMES[+d] }).join(", ")
+                $("#school_day_warning").html(
+                    "<div class='alert alert-warning mt-2 mb-0'>" + dateStr + " is a " + DAY_NAMES[day] +
+                    ", but this session's school days are: " + allowedNames + ".</div>")
+            }
+        }
+        $("#session").on("change", checkSchoolDay)
+        $("#attendance_date").on("change", checkSchoolDay)
 
         function renderRoster(payload) {
             var json_data = payload.students

@@ -31,11 +31,28 @@ class CustomUserManager(UserManager):
 
 
 class Session(models.Model):
+    # JS Date.getDay() convention (Sunday=0..Saturday=6), not Python's
+    # date.weekday() - chosen so the Take Attendance page's client-side
+    # "wrong day" warning can compare against it with no conversion.
+    WEEKDAYS = [('0', 'Sunday'), ('1', 'Monday'), ('2', 'Tuesday'), ('3', 'Wednesday'),
+                ('4', 'Thursday'), ('5', 'Friday'), ('6', 'Saturday')]
+
     start_year = models.DateField()
     end_year = models.DateField()
+    # Comma-separated WEEKDAYS values, e.g. "6" for a Saturday-only
+    # school. Blank means unrestricted/not configured - every existing
+    # session before this field existed, so nothing suddenly looks wrong
+    # until someone opts in by editing it.
+    school_days = models.CharField(max_length=20, blank=True, default='')
 
     def __str__(self):
         return "From " + str(self.start_year) + " to " + str(self.end_year)
+
+    def school_days_display(self):
+        if not self.school_days:
+            return 'Any day'
+        labels = dict(self.WEEKDAYS)
+        return ', '.join(labels[d] for d in self.school_days.split(',') if d in labels)
 
 
 class CustomUser(AbstractUser):
