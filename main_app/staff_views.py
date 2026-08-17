@@ -53,7 +53,7 @@ def staff_home(request):
 
 def staff_take_attendance(request):
     staff = get_object_or_404(Staff, admin=request.user)
-    subjects = Subject.objects.filter(staff_id=staff).select_related('course')
+    subjects = Subject.objects.filter(staff=staff).select_related('course')
     courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
     sessions = Session.objects.all()
     session_courses = session_course_ids_map()
@@ -89,18 +89,33 @@ def get_students(request):
     try:
         staff = get_object_or_404(Staff, admin=request.user)
         # Scoped to `staff` so a teacher can't submit another teacher's
-        # subject_id and pull up a class they don't teach.
+        # subject_id and pull up a class they don't teach. Still works
+        # unchanged now that staff is many-to-many - Django treats
+        # staff=<instance> as an "is one of this subject's teachers" test.
         subject = get_object_or_404(Subject, id=subject_id, staff=staff)
         session = get_object_or_404(Session, id=session_id)
         students = Student.objects.filter(
             course_id=subject.course.id, session=session)
         on_leave_ids = _approved_leave_student_ids(students, attendance_date)
+        # A class can be co-taught - if another teacher already took
+        # attendance for this exact subject/session/date, surface that
+        # instead of quietly letting a second teacher re-mark from a
+        # blank slate (see staff_take_attendance.html's warning banner).
+        existing_attendance = Attendance.objects.filter(
+            subject=subject, session=session, date=attendance_date).first()
+        reports_by_student = {}
+        if existing_attendance:
+            reports_by_student = {
+                r.student_id: r for r in AttendanceReport.objects.filter(attendance=existing_attendance)
+            }
         student_data = []
         for student in students:
+            report = reports_by_student.get(student.id)
             data = {
                     "id": student.id,
                     "name": student.admin.last_name + " " + student.admin.first_name,
                     "on_leave": student.id in on_leave_ids,
+                    "status": report.status if report else None,
                     # profile_pic is stored as a plain path string (see
                     # hod_views.add_student), not a normal FileField upload,
                     # so render it the same way every template does:
@@ -108,7 +123,12 @@ def get_students(request):
                     "profile_pic": str(student.admin.profile_pic),
                     }
             student_data.append(data)
-        return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
+        payload = {
+            "students": student_data,
+            "already_taken": existing_attendance is not None,
+            "taken_by": str(existing_attendance.taken_by) if existing_attendance and existing_attendance.taken_by else None,
+        }
+        return JsonResponse(json.dumps(payload), content_type='application/json', safe=False)
     except Exception as e:
         logger.exception("Failed to fetch students")
         return JsonResponse({'error': str(e)}, status=400)
@@ -129,6 +149,10 @@ def save_attendance(request):
 
         # Check if an attendance object already exists for the given date and session
         attendance, created = Attendance.objects.get_or_create(session=session, subject=subject, date=date)
+        # Whoever most recently saved it - lets a co-teacher see who took
+        # it last, not just who happened to create the row first.
+        attendance.taken_by = staff
+        attendance.save()
 
         submitted_ids = [student_dict.get('id') for student_dict in students]
         on_leave_ids = _approved_leave_student_ids(
@@ -160,7 +184,7 @@ def save_attendance(request):
 
 def staff_update_attendance(request):
     staff = get_object_or_404(Staff, admin=request.user)
-    subjects = Subject.objects.filter(staff_id=staff)
+    subjects = Subject.objects.filter(staff=staff)
     courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
     sessions = Session.objects.all()
     session_courses = session_course_ids_map()
@@ -218,6 +242,8 @@ def update_attendance(request):
         # Scoped to `staff` so a teacher can't overwrite another class's
         # attendance by submitting another attendance id.
         attendance = get_object_or_404(Attendance, id=date, subject__staff=staff)
+        attendance.taken_by = staff
+        attendance.save()
 
         admin_ids = [student_dict.get('id') for student_dict in students]
         # Scoped to the attendance's own class, same reasoning as save_attendance.

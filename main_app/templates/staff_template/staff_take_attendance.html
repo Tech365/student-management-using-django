@@ -125,19 +125,31 @@
             sessionSelect.prop("disabled", false)
         })
 
-        function renderRoster(json_data) {
+        function renderRoster(payload) {
+            var json_data = payload.students
+            var warning = ""
+            if (payload.already_taken) {
+                var by = payload.taken_by ? " by " + payload.taken_by : ""
+                warning = "<div class='alert alert-warning mt-3'>Attendance for this class/date was already taken" + by + ". The boxes below reflect what's currently recorded - saving will update it.</div>"
+            }
             if (json_data.length < 1) {
-                $("#student_data").html('<div class="alert alert-warning mt-3">No students found for this class/session.</div>')
+                $("#student_data").html(warning + '<div class="alert alert-warning mt-3">No students found for this class/session.</div>')
                 return
             }
-            var div_data = "<hr/><div class='mb-2'>" +
+            var div_data = warning + "<hr/><div class='mb-2'>" +
                 "<button type='button' id='mark_all_present' class='btn btn-outline-success btn-sm'>Mark All Present</button> " +
                 "<button type='button' id='mark_all_absent' class='btn btn-outline-danger btn-sm'>Mark All Absent</button>" +
                 "</div><div class='row'>"
 
             for (key in json_data) {
                 var on_leave = json_data[key]['on_leave']
-                var checked_attr = on_leave ? "" : "checked='checked'"
+                // status: 1/0 from an existing record, or null if never
+                // marked - default to present only in the null case, so
+                // re-opening an already-taken class shows what's actually
+                // recorded instead of quietly resetting everyone.
+                var status = json_data[key]['status']
+                var present = on_leave ? false : (status === null ? true : !!status)
+                var checked_attr = present ? "checked='checked'" : ""
                 var disabled_attr = on_leave ? "disabled='disabled'" : ""
                 var leave_badge = on_leave ? " <span class='badge badge-warning'>On Leave</span>" : ""
                 var avatar = json_data[key]['profile_pic']

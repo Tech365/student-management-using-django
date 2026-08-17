@@ -138,7 +138,11 @@ class ParentStudentLink(models.Model):
 
 class Subject(models.Model):
     name = models.CharField(max_length=120)
-    staff = models.ForeignKey(Staff,on_delete=models.CASCADE,)
+    # A class can be co-taught, so this is many-to-many rather than a
+    # single teacher - a nice side effect is that deleting one Staff
+    # member no longer cascades into deleting a Subject (and its whole
+    # attendance history) out from under any other teacher still on it.
+    staff = models.ManyToManyField(Staff)
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -154,6 +158,11 @@ class Attendance(models.Model):
     session = models.ForeignKey(Session, on_delete=models.CASCADE)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
     date = models.DateField()
+    # Whoever most recently saved this Attendance (create or re-take) -
+    # lets a co-teacher taking attendance for the same class/date see who
+    # already did it, instead of silently overwriting with no context.
+    # Null for historical rows from before this field existed.
+    taken_by = models.ForeignKey(Staff, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

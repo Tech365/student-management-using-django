@@ -366,9 +366,9 @@ def add_subject(request):
             try:
                 subject = Subject()
                 subject.name = name
-                subject.staff = staff
                 subject.course = course
-                subject.save()
+                subject.save()  # needs a pk before staff (M2M) can be set
+                subject.staff.set(staff)
                 log_action(request, 'created', 'Subject', subject)
                 messages.success(request, "Successfully Added")
                 return redirect(reverse('add_subject'))
@@ -435,7 +435,8 @@ def bulk_upload_subjects(request):
                     results.append({'row': row_number, 'status': 'skipped', 'message': f'"{name}" already exists for {course_name}'})
                     continue
                 try:
-                    Subject.objects.create(name=name, staff=staff, course=course)
+                    subject = Subject.objects.create(name=name, course=course)
+                    subject.staff.set([staff])
                     results.append({'row': row_number, 'status': 'success', 'message': f'Created "{name}"'})
                 except Exception as e:
                     logger.exception('Unhandled error in bulk_upload_subjects row %s', row_number)
@@ -640,7 +641,7 @@ def manage_course(request):
 
 
 def manage_subject(request):
-    subjects = Subject.objects.order_by('id')
+    subjects = Subject.objects.prefetch_related('staff__admin').order_by('id')
     context = {
         'subjects': subjects,
         'page_title': 'Manage Subjects'
@@ -888,9 +889,9 @@ def edit_subject(request, subject_id):
             try:
                 subject = Subject.objects.get(id=subject_id)
                 subject.name = name
-                subject.staff = staff
                 subject.course = course
                 subject.save()
+                subject.staff.set(staff)
                 log_action(request, 'updated', 'Subject', subject)
                 messages.success(request, "Successfully Updated")
                 return redirect(reverse('edit_subject', args=[subject_id]))
@@ -1492,11 +1493,12 @@ def delete_session(request, session_id):
 def _class_subjects_report_data(request):
     course_id = request.GET.get('course') or ''
     staff_id = request.GET.get('staff') or ''
-    subjects = Subject.objects.select_related('course', 'staff__admin').order_by('course__name', 'name')
+    subjects = (Subject.objects.select_related('course')
+                .prefetch_related('staff__admin').order_by('course__name', 'name'))
     if course_id:
         subjects = subjects.filter(course_id=course_id)
     if staff_id:
-        subjects = subjects.filter(staff_id=staff_id)
+        subjects = subjects.filter(staff__id=staff_id)
     return {'course_id': course_id, 'staff_id': staff_id, 'subjects': subjects}
 
 
@@ -1515,7 +1517,7 @@ def report_class_subjects(request):
 
 def report_class_subjects_csv(request):
     data = _class_subjects_report_data(request)
-    rows = [(s.course.name, s.name, str(s.staff)) for s in data['subjects']]
+    rows = [(s.course.name, s.name, ', '.join(str(t) for t in s.staff.all())) for s in data['subjects']]
     return csv_response('class_subject_assignments.csv', ['Class', 'Subject', 'Teacher'], rows)
 
 
@@ -1693,7 +1695,8 @@ def _attendance_not_taken_data(request):
     selected_date = request.GET.get('date') or date.today().isoformat()
     course_id = request.GET.get('course') or ''
 
-    subjects = Subject.objects.select_related('course', 'staff', 'staff__admin').order_by('course__name', 'name')
+    subjects = (Subject.objects.select_related('course')
+                .prefetch_related('staff__admin').order_by('course__name', 'name'))
     if course_id:
         subjects = subjects.filter(course_id=course_id)
 
@@ -1706,7 +1709,8 @@ def _attendance_not_taken_data(request):
         .values_list('subject_id', flat=True)
     )
     not_taken = [
-        {'course': subject.course.name, 'subject': subject.name, 'teacher': str(subject.staff)}
+        {'course': subject.course.name, 'subject': subject.name,
+         'teacher': ', '.join(str(t) for t in subject.staff.all())}
         for subject in subjects if subject.id not in taken_subject_ids
     ]
     return {'selected_date': selected_date, 'selected_course': course_id, 'not_taken': not_taken}

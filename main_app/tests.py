@@ -73,6 +73,16 @@ def make_student(email, course, session):
     return student
 
 
+def make_subject(name, staff, course):
+    """`staff` may be a single Staff or a list, for co-teaching tests -
+    Subject.staff is many-to-many, so it can't be passed to .create()."""
+    if not isinstance(staff, (list, tuple)):
+        staff = [staff]
+    subject = Subject.objects.create(name=name, course=course)
+    subject.staff.set(staff)
+    return subject
+
+
 def make_parent(email, linked_student=None):
     user = CustomUser.objects.create_user(
         email=email, password=PASSWORD, user_type=4,
@@ -115,8 +125,8 @@ class StaffMultipleClassesTests(TestCase):
         self.course_a = make_course("Multi Class A")
         self.course_b = make_course("Multi Class B")
         self.teacher = make_staff("multi_class_teacher@example.com", self.course_a)
-        Subject.objects.create(name="Subject A", staff=self.teacher, course=self.course_a)
-        Subject.objects.create(name="Subject B", staff=self.teacher, course=self.course_b)
+        make_subject("Subject A", self.teacher, self.course_a)
+        make_subject("Subject B", self.teacher, self.course_b)
         self.student_a = make_student("multi_class_student_a@example.com", self.course_a, self.session)
         self.student_b = make_student("multi_class_student_b@example.com", self.course_b, self.session)
 
@@ -178,7 +188,7 @@ class ResultPermissionTests(TestCase):
         self.session = make_session()
         self.owner = make_staff("owner@example.com", self.course)
         self.intruder = make_staff("intruder@example.com", self.course)
-        self.subject = Subject.objects.create(name="Maths", staff=self.owner, course=self.course)
+        self.subject = make_subject("Maths", self.owner, self.course)
         self.student = make_student("result_student@example.com", self.course, self.session)
 
     def test_staff_add_result_rejects_other_staffs_subject(self):
@@ -230,7 +240,7 @@ class EditResultViewPermissionTests(TestCase):
         self.session = make_session()
         self.owner = make_staff("owner2@example.com", self.course)
         self.intruder = make_staff("intruder2@example.com", self.course)
-        self.subject = Subject.objects.create(name="Physics", staff=self.owner, course=self.course)
+        self.subject = make_subject("Physics", self.owner, self.course)
         self.student = make_student("edit_result_student@example.com", self.course, self.session)
         self.result = StudentResult.objects.create(student=self.student, subject=self.subject, test=5, exam=5)
 
@@ -280,7 +290,7 @@ class AttendanceUpdateRoutingTests(TestCase):
         self.course = make_course()
         self.session = make_session()
         self.staff = make_staff("attendance_staff@example.com", self.course)
-        self.subject = Subject.objects.create(name="Chemistry", staff=self.staff, course=self.course)
+        self.subject = make_subject("Chemistry", self.staff, self.course)
         self.student = make_student("attendance_student@example.com", self.course, self.session)
         self.attendance = Attendance.objects.create(
             session=self.session, subject=self.subject, date=datetime.date(2024, 2, 1))
@@ -311,7 +321,7 @@ class SaveAttendanceTests(TestCase):
         self.course = make_course()
         self.session = make_session()
         self.staff = make_staff("save_attendance_staff@example.com", self.course)
-        self.subject = Subject.objects.create(name="Physics", staff=self.staff, course=self.course)
+        self.subject = make_subject("Physics", self.staff, self.course)
         self.student = make_student("save_attendance_student@example.com", self.course, self.session)
         self.client.login(username="save_attendance_staff@example.com", password=PASSWORD)
 
@@ -369,7 +379,7 @@ class AttendanceEndpointsPermissionTests(TestCase):
         self.intruder_course = make_course("Intruder Course")
         self.owner = make_staff("attendance_owner@example.com", self.owner_course)
         self.intruder = make_staff("attendance_intruder@example.com", self.intruder_course)
-        self.owner_subject = Subject.objects.create(name="Owner Subject", staff=self.owner, course=self.owner_course)
+        self.owner_subject = make_subject("Owner Subject", self.owner, self.owner_course)
         self.owner_student = make_student("attendance_owner_student@example.com", self.owner_course, self.session)
         self.attendance = Attendance.objects.create(
             session=self.session, subject=self.owner_subject, date=datetime.date(2026, 8, 8))
@@ -452,7 +462,7 @@ class ViewUpdateAttendanceLeaveTests(TestCase):
         self.course = make_course()
         self.session = make_session()
         self.staff = make_staff("vu_attendance_staff@example.com", self.course)
-        self.subject = Subject.objects.create(name="Chemistry2", staff=self.staff, course=self.course)
+        self.subject = make_subject("Chemistry2", self.staff, self.course)
         self.present_student = make_student("vu_present_student@example.com", self.course, self.session)
         self.leave_student = make_student("vu_leave_student@example.com", self.course, self.session)
         self.attendance = Attendance.objects.create(
@@ -496,7 +506,7 @@ class AdminViewAttendanceLeaveTests(TestCase):
         self.course = make_course()
         self.session = make_session()
         staff = make_staff("admin_view_attendance_staff@example.com", self.course)
-        self.subject = Subject.objects.create(name="Chemistry3", staff=staff, course=self.course)
+        self.subject = make_subject("Chemistry3", staff, self.course)
         self.leave_student = make_student("admin_view_leave_student@example.com", self.course, self.session)
         self.attendance = Attendance.objects.create(
             session=self.session, subject=self.subject, date=datetime.date(2026, 8, 8))
@@ -524,7 +534,7 @@ class StudentAndParentAttendanceHistoryLeaveTests(TestCase):
         self.course = make_course()
         self.session = make_session()
         self.staff = make_staff("history_leave_staff@example.com", self.course)
-        self.subject = Subject.objects.create(name="History", staff=self.staff, course=self.course)
+        self.subject = make_subject("History", self.staff, self.course)
         self.student = make_student("history_leave_student@example.com", self.course, self.session)
         self.present_attendance = Attendance.objects.create(
             session=self.session, subject=self.subject, date=datetime.date(2026, 8, 8))
@@ -584,7 +594,7 @@ class CsrfEnforcementTests(TestCase):
         self.course = make_course()
         self.session = make_session()
         self.staff = make_staff("csrf_staff@example.com", self.course)
-        Subject.objects.create(name="Biology", staff=self.staff, course=self.course)
+        make_subject("Biology", self.staff, self.course)
 
     def test_get_students_requires_csrf_token(self):
         client = Client(enforce_csrf_checks=True)
@@ -744,7 +754,7 @@ class DeleteWithAttendanceHistoryTests(TestCase):
         self.course = make_course("Delete Test Course")
         self.session = make_session()
         self.staff = make_staff("delete_teacher@example.com", self.course)
-        self.subject = Subject.objects.create(name="Delete Test Subject", staff=self.staff, course=self.course)
+        self.subject = make_subject("Delete Test Subject", self.staff, self.course)
         self.student = make_student("delete_student@example.com", self.course, self.session)
         attendance = Attendance.objects.create(session=self.session, subject=self.subject, date=datetime.date(2026, 1, 1))
         AttendanceReport.objects.create(student=self.student, attendance=attendance, status=True)
@@ -755,12 +765,19 @@ class DeleteWithAttendanceHistoryTests(TestCase):
         self.assertFalse(Student.objects.filter(id=self.student.id).exists())
         self.assertFalse(AttendanceReport.objects.filter(student_id=self.student.id).exists())
 
-    def test_deleting_staff_with_attendance_history_succeeds(self):
+    def test_deleting_staff_leaves_subject_and_attendance_history_intact(self):
+        # Subject.staff is many-to-many (a class can be co-taught), so
+        # deleting a teacher no longer cascades into deleting every
+        # Subject they were on - it just drops them from that Subject's
+        # teacher set. The Subject (and its attendance history) survives
+        # even if that was its only teacher, so it can be reassigned
+        # instead of the class's whole history vanishing.
         response = self.client.get(reverse('delete_staff', args=[self.staff.id]))
         self.assertRedirects(response, reverse('manage_staff'))
         self.assertFalse(Staff.objects.filter(id=self.staff.id).exists())
-        self.assertFalse(Subject.objects.filter(id=self.subject.id).exists())
-        self.assertFalse(Attendance.objects.filter(subject_id=self.subject.id).exists())
+        self.assertTrue(Subject.objects.filter(id=self.subject.id).exists())
+        self.assertEqual(list(Subject.objects.get(id=self.subject.id).staff.all()), [])
+        self.assertTrue(Attendance.objects.filter(subject_id=self.subject.id).exists())
 
     def test_deleting_subject_with_attendance_history_succeeds(self):
         response = self.client.get(reverse('delete_subject', args=[self.subject.id]))
@@ -796,7 +813,7 @@ class AttendanceSummaryReportTests(TestCase):
         self.course = make_course("Report Course")
         self.session = make_session()
         self.staff = make_staff("report_teacher@example.com", self.course)
-        self.subject = Subject.objects.create(name="Report Subject", staff=self.staff, course=self.course)
+        self.subject = make_subject("Report Subject", self.staff, self.course)
         self.student = make_student("report_student@example.com", self.course, self.session)
         attendance = Attendance.objects.create(session=self.session, subject=self.subject, date=datetime.date(2024, 6, 15))
         AttendanceReport.objects.create(student=self.student, attendance=attendance, status=True)
@@ -828,7 +845,7 @@ class AttendanceSummaryReportTests(TestCase):
         # A 2nd subject in the same course/date with a different
         # attendance rate - the by-subject table must keep them separate
         # instead of blending into one course-wide number.
-        second_subject = Subject.objects.create(name="Second Subject", staff=self.staff, course=self.course)
+        second_subject = make_subject("Second Subject", self.staff, self.course)
         attendance2 = Attendance.objects.create(
             session=self.session, subject=second_subject, date=datetime.date(2024, 6, 15))
         AttendanceReport.objects.create(student=self.student, attendance=attendance2, status=False)
@@ -926,8 +943,8 @@ class AttendanceNotTakenReportTests(TestCase):
         self.course = make_course("Not Taken Course")
         self.session = make_session()
         self.staff = make_staff("not_taken_teacher@example.com", self.course)
-        self.taken_subject = Subject.objects.create(name="Marked Subject", staff=self.staff, course=self.course)
-        self.not_taken_subject = Subject.objects.create(name="Unmarked Subject", staff=self.staff, course=self.course)
+        self.taken_subject = make_subject("Marked Subject", self.staff, self.course)
+        self.not_taken_subject = make_subject("Unmarked Subject", self.staff, self.course)
         Attendance.objects.create(session=self.session, subject=self.taken_subject, date=datetime.date(2024, 6, 15))
 
     def test_lists_only_the_subject_without_attendance(self):
@@ -946,7 +963,7 @@ class AttendanceNotTakenReportTests(TestCase):
     def test_course_filter_scopes_results(self):
         other_course = make_course("Other Not Taken Course")
         other_staff = make_staff("other_not_taken_teacher@example.com", other_course)
-        Subject.objects.create(name="Other Course Subject", staff=other_staff, course=other_course)
+        make_subject("Other Course Subject", other_staff, other_course)
 
         response = self.client.get(reverse('report_attendance_not_taken'), {
             'date': '2024-06-16', 'course': self.course.id,
@@ -982,7 +999,7 @@ class StudentAttendanceReportTests(TestCase):
         self.course = make_course("Student Report Course")
         self.session = make_session()
         self.staff = make_staff("report_teacher2@example.com", self.course)
-        self.subject = Subject.objects.create(name="Student Report Subject", staff=self.staff, course=self.course)
+        self.subject = make_subject("Student Report Subject", self.staff, self.course)
         self.student = make_student("report_target_student@example.com", self.course, self.session)
         attendance = Attendance.objects.create(session=self.session, subject=self.subject, date=datetime.date(2024, 6, 15))
         AttendanceReport.objects.create(student=self.student, attendance=attendance, status=True)
@@ -1005,7 +1022,7 @@ class StudentAttendanceReportTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_by_subject_breakdown_for_student(self):
-        second_subject = Subject.objects.create(name="Second Subject", staff=self.staff, course=self.course)
+        second_subject = make_subject("Second Subject", self.staff, self.course)
         attendance2 = Attendance.objects.create(
             session=self.session, subject=second_subject, date=datetime.date(2024, 6, 16))
         AttendanceReport.objects.create(student=self.student, attendance=attendance2, status=False)
@@ -1089,7 +1106,7 @@ class StaffStudentLeaveApprovalTests(TestCase):
         self.course_a = make_course("Leave Approval Course A")
         self.course_b = make_course("Leave Approval Course B")
         self.teacher = make_staff("leave_teacher@example.com", self.course_a)
-        Subject.objects.create(name="Course A Subject", staff=self.teacher, course=self.course_a)
+        make_subject("Course A Subject", self.teacher, self.course_a)
         self.student_a = make_student("leave_student_a@example.com", self.course_a, self.session)
         self.student_b = make_student("leave_student_b@example.com", self.course_b, self.session)
         self.leave_a = LeaveReportStudent.objects.create(
@@ -1137,7 +1154,7 @@ class StaffStudentLeaveApprovalTests(TestCase):
         # A class can have more than one teacher (e.g. a madrasa with two
         # teachers per class, each covering different subjects).
         second_teacher = make_staff("leave_teacher_2@example.com", self.course_b)
-        Subject.objects.create(name="Course A Subject 2", staff=second_teacher, course=self.course_a)
+        make_subject("Course A Subject 2", second_teacher, self.course_a)
         self.client.logout()
         self.client.login(username="leave_teacher_2@example.com", password=PASSWORD)
         response = self.client.post(reverse('staff_view_student_leave'), {
@@ -1149,7 +1166,7 @@ class StaffStudentLeaveApprovalTests(TestCase):
 
     def test_teacher_of_multiple_classes_sees_leave_from_all_of_them(self):
         # Same teacher can teach a subject in more than one class.
-        Subject.objects.create(name="Course B Subject", staff=self.teacher, course=self.course_b)
+        make_subject("Course B Subject", self.teacher, self.course_b)
         response = self.client.get(reverse('staff_view_student_leave'))
         leaves = set(response.context['allLeave'])
         self.assertEqual(leaves, {self.leave_a, self.leave_b})
@@ -1179,7 +1196,7 @@ class CourselessStudentLeaveScopingTests(TestCase):
         self.session = make_session()
         self.course = make_course("Null Scoping Course")
         self.teacher = make_staff("courseless_scoping_teacher@example.com", self.course)
-        Subject.objects.create(name="Some Subject", staff=self.teacher, course=self.course)
+        make_subject("Some Subject", self.teacher, self.course)
         self.courseless_student = make_student("courseless_student@example.com", self.course, self.session)
         self.courseless_student.course = None
         self.courseless_student.save()
@@ -1219,7 +1236,7 @@ class TakeAttendanceLeaveFlagTests(TestCase):
         self.course = make_course("Attendance Leave Course")
         self.session = make_session()
         self.teacher = make_staff("attendance_leave_teacher@example.com", self.course)
-        self.subject = Subject.objects.create(name="Attendance Leave Subject", staff=self.teacher, course=self.course)
+        self.subject = make_subject("Attendance Leave Subject", self.teacher, self.course)
         self.on_leave_student = make_student("attendance_leave_on@example.com", self.course, self.session)
         self.other_student = make_student("attendance_leave_off@example.com", self.course, self.session)
         LeaveReportStudent.objects.create(
@@ -1230,7 +1247,7 @@ class TakeAttendanceLeaveFlagTests(TestCase):
         response = self.client.post(reverse('get_students'), {
             'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-15',
         })
-        data = {row['id']: row['on_leave'] for row in json.loads(response.json())}
+        data = {row['id']: row['on_leave'] for row in json.loads(response.json())['students']}
         self.assertTrue(data[self.on_leave_student.id])
         self.assertFalse(data[self.other_student.id])
 
@@ -1238,7 +1255,7 @@ class TakeAttendanceLeaveFlagTests(TestCase):
         response = self.client.post(reverse('get_students'), {
             'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-16',
         })
-        data = {row['id']: row['on_leave'] for row in json.loads(response.json())}
+        data = {row['id']: row['on_leave'] for row in json.loads(response.json())['students']}
         self.assertFalse(data[self.on_leave_student.id])
 
     def test_pending_leave_not_flagged(self):
@@ -1246,7 +1263,7 @@ class TakeAttendanceLeaveFlagTests(TestCase):
         response = self.client.post(reverse('get_students'), {
             'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-15',
         })
-        data = {row['id']: row['on_leave'] for row in json.loads(response.json())}
+        data = {row['id']: row['on_leave'] for row in json.loads(response.json())['students']}
         self.assertFalse(data[self.on_leave_student.id])
 
 
@@ -1259,7 +1276,7 @@ class LeaveNotificationTests(TestCase):
         self.course = make_course("Leave Notify Course")
         self.session = make_session()
         self.teacher = make_staff("leave_notify_teacher@example.com", self.course)
-        Subject.objects.create(name="Leave Notify Subject", staff=self.teacher, course=self.course)
+        make_subject("Leave Notify Subject", self.teacher, self.course)
         self.student = make_student("leave_notify_student@example.com", self.course, self.session)
         self.admin_user = make_admin("leave_notify_admin@example.com")
 
@@ -1350,7 +1367,7 @@ class ResultsReportTests(TestCase):
         self.course = make_course("Results Report Course")
         session = make_session()
         self.staff = make_staff("report_results_staff@example.com", self.course)
-        self.subject = Subject.objects.create(name="Results Report Subject", staff=self.staff, course=self.course)
+        self.subject = make_subject("Results Report Subject", self.staff, self.course)
         self.student = make_student("report_results_student@example.com", self.course, session)
         StudentResult.objects.create(student=self.student, subject=self.subject, test=8, exam=16)
 
@@ -1504,7 +1521,7 @@ class ChronicAbsenceFlaggingTests(TestCase):
         self.course = make_course("Chronic Course")
         self.session = make_session()
         staff = make_staff("chronic_teacher@example.com", self.course)
-        self.subject = Subject.objects.create(name="Chronic Subject", staff=staff, course=self.course)
+        self.subject = make_subject("Chronic Subject", staff, self.course)
 
         self.good_student = make_student("good_attendance@example.com", self.course, self.session)
         self.bad_student = make_student("bad_attendance@example.com", self.course, self.session)
@@ -1803,7 +1820,7 @@ class ParentFeatureTests(TestCase):
 
     def test_parent_apply_leave_notifies_class_teachers(self):
         teacher = make_staff("parent_feature_teacher@example.com", self.course)
-        Subject.objects.create(name="Parent Feature Subject", staff=teacher, course=self.course)
+        make_subject("Parent Feature Subject", teacher, self.course)
         self._register_parent()
         self.client.login(username="parent_feature_admin@example.com", password=PASSWORD)
         link = ParentStudentLink.objects.get(student=self.student)
@@ -1918,7 +1935,7 @@ class ParentNotificationTests(TestCase):
 
     def test_leave_decided_by_staff_notifies_applying_parent(self):
         teacher = make_staff("notif_teacher@example.com", self.course)
-        Subject.objects.create(name="Notif Subject", staff=teacher, course=self.course)
+        make_subject("Notif Subject", teacher, self.course)
 
         self.client.login(username="notif_admin@example.com", password=PASSWORD)
         self.client.post(reverse('view_parent_link_requests'), {'id': self.link.id, 'status': '1'})
@@ -2009,8 +2026,7 @@ class SecurityHardeningTests(TestCase):
         self.assertFalse(CustomUser.objects.filter(email='future_dob_parent@example.com').exists())
 
     def test_get_attendance_rejects_student(self):
-        Subject.objects.create(name="Hardening Subject", course=self.course,
-                                staff=make_staff("hardening_teacher@example.com", self.course))
+        make_subject("Hardening Subject", make_staff("hardening_teacher@example.com", self.course), self.course)
         self.client.login(username=self.student.admin.email, password=PASSWORD)
         response = self.client.post(reverse('get_attendance'), {
             'subject': 1, 'session': self.session.id,
@@ -2435,3 +2451,130 @@ class RolePanelTests(TestCase):
     def test_grant_parent_role_prefills_email_from_query_param(self):
         response = self.client.get(reverse('grant_parent_role') + '?email=prefill_parent@example.com')
         self.assertContains(response, 'prefill_parent@example.com')
+
+
+class CoTeachingTests(TestCase):
+    """A Subject can now have more than one teacher (Subject.staff is
+    many-to-many) - either can take attendance for it, and a second
+    teacher opening Take Attendance for an already-marked class/date sees
+    a warning but can still save (matches the existing single-teacher
+    "re-take corrects it" behavior, just visible across teachers too)."""
+
+    def setUp(self):
+        self.course = make_course("Co-Teaching Course")
+        self.session = make_session()
+        self.teacher_a = make_staff("coteach_a@example.com", self.course)
+        self.teacher_b = make_staff("coteach_b@example.com", self.course)
+        self.subject = make_subject("Shared Subject", [self.teacher_a, self.teacher_b], self.course)
+        self.student = make_student("coteach_student@example.com", self.course, self.session)
+
+    def test_both_teachers_can_reach_get_students(self):
+        for email in ("coteach_a@example.com", "coteach_b@example.com"):
+            self.client.login(username=email, password=PASSWORD)
+            response = self.client.post(reverse('get_students'), {
+                'subject': self.subject.id, 'session': self.session.id, 'date': '2026-08-17',
+            })
+            self.assertEqual(response.status_code, 200)
+            self.client.logout()
+
+    def test_get_students_reports_not_taken_before_anyone_saves(self):
+        self.client.login(username="coteach_a@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': '2026-08-17',
+        })
+        payload = json.loads(response.json())
+        self.assertFalse(payload['already_taken'])
+        self.assertIsNone(payload['taken_by'])
+        self.assertIsNone(payload['students'][0]['status'])
+
+    def test_second_teacher_sees_already_taken_by_first(self):
+        self.client.login(username="coteach_a@example.com", password=PASSWORD)
+        self.client.post(reverse('save_attendance'), {
+            'date': '2026-08-17', 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 0}]),
+        })
+        self.client.logout()
+
+        self.client.login(username="coteach_b@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': '2026-08-17',
+        })
+        payload = json.loads(response.json())
+        self.assertTrue(payload['already_taken'])
+        self.assertEqual(payload['taken_by'], str(self.teacher_a))
+        self.assertEqual(payload['students'][0]['status'], 0)  # A's mark, not defaulted
+
+    def test_second_teacher_can_still_save_and_becomes_taken_by(self):
+        self.client.login(username="coteach_a@example.com", password=PASSWORD)
+        self.client.post(reverse('save_attendance'), {
+            'date': '2026-08-17', 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 0}]),
+        })
+        self.client.logout()
+
+        self.client.login(username="coteach_b@example.com", password=PASSWORD)
+        response = self.client.post(reverse('save_attendance'), {
+            'date': '2026-08-17', 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(response.content, b"OK")
+
+        # Same Attendance row updated, not a duplicate.
+        self.assertEqual(Attendance.objects.filter(subject=self.subject, session=self.session, date='2026-08-17').count(), 1)
+        attendance = Attendance.objects.get(subject=self.subject, session=self.session, date='2026-08-17')
+        self.assertEqual(attendance.taken_by, self.teacher_b)
+        report = AttendanceReport.objects.get(student=self.student, attendance=attendance)
+        self.assertTrue(report.status)  # B's correction took effect
+
+    def test_edit_result_view_reachable_by_either_teacher(self):
+        for email in ("coteach_a@example.com", "coteach_b@example.com"):
+            self.client.login(username=email, password=PASSWORD)
+            response = self.client.get(reverse('edit_student_result'))
+            self.assertEqual(list(response.context['form'].fields['subject'].queryset), [self.subject])
+            self.client.logout()
+
+    def test_staff_class_names_map_attributes_shared_subject_to_both(self):
+        from .utils import staff_class_names_map
+        names = staff_class_names_map([self.teacher_a.id, self.teacher_b.id])
+        self.assertEqual(names.get(self.teacher_a.id), "Co-Teaching Course")
+        self.assertEqual(names.get(self.teacher_b.id), "Co-Teaching Course")
+
+    def test_teacher_course_ids_works_for_either_teacher(self):
+        from .utils import teacher_course_ids
+        self.assertEqual(teacher_course_ids(self.teacher_a), {self.course.id})
+        self.assertEqual(teacher_course_ids(self.teacher_b), {self.course.id})
+
+    def test_report_class_subjects_lists_both_teachers(self):
+        make_admin("coteach_report_admin@example.com")
+        self.client.login(username="coteach_report_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('report_class_subjects'))
+        self.assertContains(response, str(self.teacher_a))
+        self.assertContains(response, str(self.teacher_b))
+
+        csv_response = self.client.get(reverse('report_class_subjects_csv'))
+        body = csv_response.content.decode()
+        self.assertIn(str(self.teacher_a), body)
+        self.assertIn(str(self.teacher_b), body)
+
+    def test_add_subject_with_two_teachers(self):
+        make_admin("coteach_add_admin@example.com")
+        self.client.login(username="coteach_add_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('add_subject'), {
+            'name': 'Brand New Shared Subject', 'course': self.course.id,
+            'staff': [self.teacher_a.id, self.teacher_b.id],
+        })
+        self.assertEqual(response.status_code, 302)
+        subject = Subject.objects.get(name='Brand New Shared Subject')
+        self.assertEqual(set(subject.staff.all()), {self.teacher_a, self.teacher_b})
+
+    def test_edit_subject_can_add_a_second_teacher(self):
+        solo_subject = make_subject("Solo Subject", self.teacher_a, self.course)
+        make_admin("coteach_edit_admin@example.com")
+        self.client.login(username="coteach_edit_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('edit_subject', args=[solo_subject.id]), {
+            'name': 'Solo Subject', 'course': self.course.id,
+            'staff': [self.teacher_a.id, self.teacher_b.id],
+        })
+        self.assertEqual(response.status_code, 302)
+        solo_subject.refresh_from_db()
+        self.assertEqual(set(solo_subject.staff.all()), {self.teacher_a, self.teacher_b})

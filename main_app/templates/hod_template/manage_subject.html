@@ -34,7 +34,7 @@
                                 <tr>
                                     <td>{{ forloop.counter }}</td>
                                     <td>{{subject.name}}</td>
-                                    <td>{{subject.staff.admin}}</td>
+                                    <td>{% for t in subject.staff.all %}{{ t.admin }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
                                     <td>{{subject.course.name}}</td>
                                     <td>
                                         <a href="{% url 'edit_subject' subject.id %}" class="btn btn-primary">Edit</a> -

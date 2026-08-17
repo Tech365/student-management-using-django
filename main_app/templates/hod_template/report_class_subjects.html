@@ -52,7 +52,7 @@
                                     <tr>
                                         <td>{{ subject.course.name }}</td>
                                         <td>{{ subject.name }}</td>
-                                        <td>{{ subject.staff }}</td>
+                                        <td>{% for t in subject.staff.all %}{{ t }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
                                     </tr>
                                     {% empty %}
                                     <tr><td colspan="3" class="text-muted">No subjects match these filters.</td></tr>

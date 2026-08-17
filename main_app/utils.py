@@ -182,9 +182,16 @@ def staff_class_names_map(staff_ids):
     see teacher_course_ids). Staff with no subjects assigned yet are
     simply absent from the returned dict; look up with .get(id, '—')."""
     from .models import Subject
+    staff_ids = set(staff_ids)
     by_staff = {}
-    for subject in Subject.objects.filter(staff_id__in=staff_ids).select_related('course'):
-        by_staff.setdefault(subject.staff_id, set()).add(subject.course.name)
+    subjects = Subject.objects.filter(staff__id__in=staff_ids).distinct().prefetch_related('staff').select_related('course')
+    for subject in subjects:
+        # A subject can be co-taught, so attribute its class to every one
+        # of its teachers that's actually in staff_ids - not just "the"
+        # teacher, which no longer means anything for a shared subject.
+        for staff_member in subject.staff.all():
+            if staff_member.id in staff_ids:
+                by_staff.setdefault(staff_member.id, set()).add(subject.course.name)
     return {staff_id: ', '.join(sorted(names)) for staff_id, names in by_staff.items()}
 
 

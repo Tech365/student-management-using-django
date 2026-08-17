@@ -34,7 +34,7 @@ class EditResultView(View):
                 # Reject subjects that don't belong to the requesting staff
                 # member, so a tampered subject id can't be used to edit
                 # another teacher's results.
-                if subject.staff_id != staff.id:
+                if not subject.staff.filter(id=staff.id).exists():
                     messages.warning(request, "Result Could Not Be Updated")
                     return render(request, "staff_template/edit_student_result.html", context)
                 # Same reasoning for the student - otherwise a tampered
