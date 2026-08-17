@@ -184,6 +184,13 @@ class SessionForm(FormSettings):
             # wins over field.initial when rendering - override that
             # directly, not the field, or the checkboxes stay unchecked.
             self.initial['school_days'] = self.instance.school_days.split(',')
+        # FormSettings.__init__ (already ran, above) blindly stamps
+        # class="form-control" onto every visible field, including each
+        # individual checkbox <input> here - Bootstrap's .form-control is
+        # display:block/width:100%, which blows every checkbox up into a
+        # full-width bar instead of a small toggle. Not what any checkbox
+        # field wants, so drop it back off.
+        self.fields['school_days'].widget.attrs.pop('class', None)
 
     def clean_school_days(self):
         return ','.join(self.cleaned_data.get('school_days', []))

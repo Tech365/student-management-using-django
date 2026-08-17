@@ -1,3 +1,23 @@
+<style>
+    /* Session.school_days (id_school_days) is the only CheckboxSelectMultiple
+       in the app - its wrapper shouldn't inherit the block/full-width
+       .form-control look every other field here gets. Django renders each
+       option as its own <div><label><input>...</label></div>, not <li>. */
+    #id_school_days {
+        margin-bottom: 0;
+    }
+    #id_school_days > div {
+        display: inline-block;
+        margin: 0 15px 8px 0;
+    }
+    #id_school_days input[type="checkbox"] {
+        width: auto;
+        height: auto;
+        display: inline-block;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+</style>
 <form role="form" method="POST" enctype="multipart/form-data">
     {% csrf_token %}
     <div class="card-body">
@@ -8,7 +28,7 @@
             {{field.errors}}
             {{field.label_tag}}
             {{field}}
-
+            {% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}
         </div>
         {% endfor %}
 
