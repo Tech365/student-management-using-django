@@ -265,7 +265,7 @@ def staff_apply_leave(request):
                 obj.save()
                 message = f"{staff} applied for leave on {obj.date}: {obj.message}"
                 # Admin has no in-app notification inbox, so email only.
-                for admin_user in CustomUser.objects.filter(user_type=1):
+                for admin_user in CustomUser.objects.filter(admin__isnull=False):
                     send_notification_email(admin_user, message)
                 messages.success(
                     request, "Application for leave has been submitted for review")

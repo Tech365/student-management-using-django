@@ -13,11 +13,6 @@
         font-weight: bold;
         color: green;
       }
-      .role-attach-note{
-        font-style: italic;
-        font-weight: bold;
-        color: #17a2b8;
-      }
   </style>
 {% endblock custom_css %}
 {% block content %}
@@ -26,18 +21,20 @@
     <div class="container-fluid">
         <div class="row">
             <div class="col-md-12">
-                <!-- general form elements -->
                 <div class="card card-primary">
                     <div class="card-header">
                         <h3 class="card-title">{{page_title}}</h3>
-                        <div class="card-tools">
-                            <a href="{% url 'bulk_upload_staff' %}" class="btn btn-outline-light btn-sm">
-                                <i class="fas fa-file-upload"></i> Bulk Upload
-                            </a>
-                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">
+                            Attaches the Parent role to an email that already has an Admin, Staff,
+                            or Student account here - their existing password/photo won't change.
+                            To create a brand-new Parent (no existing account), send them to the
+                            public registration page instead.
+                        </p>
                     </div>
 
-                    {% include "main_app/form_template.html" with messages=messages  form=form button_text="Add Staff"%}
+                    {% include "main_app/form_template.html" with messages=messages form=form button_text="Grant Parent Role" %}
                 </div>
                 <!-- /.card -->
 
@@ -54,7 +51,6 @@
     }
     $(document).ready(function(){
         $("#id_email").keyup(function(){
-            
             var email = $(this).val()
             if (validateEmail(email)){
             $.ajax({
@@ -64,11 +60,11 @@
             }).done(function(response){
                 if (response == "True"){
                     $(".email_error").remove()
-                    $("<span class='role-attach-note email_error'>This email already has an account - submitting will add the Staff role to it. Their existing password/photo won't change.</span>").insertAfter("#id_email");
+                    $("<span class='valid email_error'>Account found - the Parent role will be added to it.</span>").insertAfter("#id_email");
                 }
                 else{
                     $(".email_error").remove()
-                    $("<span class='valid email_error'>Email Address Available</span>").insertAfter("#id_email");
+                    $("<span class='invalid email_error'>No account with this email yet - new parents should use the public registration page instead.</span>").insertAfter("#id_email");
                 }
             }).fail(function(response){
                 $("<span class='alert alert-warning'>Server Could Not Process This</span>").insertAfter("#id_email");

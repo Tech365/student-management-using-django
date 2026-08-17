@@ -1,6 +1,6 @@
 {% load static %}
 <aside class="main-sidebar sidebar-dark-primary elevation-4">
-{% if request.user.user_type == '1' %}
+{% if active_role == '1' %}
     <!-- Brand Logo -->
     <a href="{% url 'admin_home' %}" class="brand-link">
         <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
@@ -95,6 +95,13 @@
                         class="nav-link {% if edit_parent == request.path or manage_parent == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-user-friends text-primary"></i>
                         <p>Manage Parents</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'grant_parent_role' as grant_parent_role %}
+                    <a href="{{grant_parent_role}}" class="nav-link {% if grant_parent_role == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-user-tag text-primary"></i>
+                        <p>Grant Parent Role</p>
                     </a>
                 </li>
 
@@ -261,7 +268,7 @@
                     </a>
                 </li>
 
-{% elif request.user.user_type == '2' %}
+{% elif active_role == '2' %}
     <!-- Brand Logo -->
     <a href="#" class="brand-link">
         <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
@@ -371,7 +378,7 @@
                     </a>
                 </li>
 
-{% elif request.user.user_type == '3' %}
+{% elif active_role == '3' %}
     <!-- Brand Logo -->
     <a href="" class="brand-link">
         <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
@@ -456,7 +463,7 @@
                     </a>
                 </li>
 
-{% elif request.user.user_type == '4' %}
+{% elif active_role == '4' %}
     <!-- Brand Logo -->
     <a href="" class="brand-link">
         <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
@@ -536,7 +543,16 @@
 
 {% endif %}
 
+                {% if available_roles|length > 1 %}
                 <li class="nav-item mt-2">
+                    <a href="{% url 'choose_role' %}" class="nav-link">
+                        <i class="nav-icon fas fa-people-arrows text-secondary"></i>
+                        <p>Switch Role</p>
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="nav-item{% if not available_roles|length > 1 %} mt-2{% endif %}">
                     <a href="{% url 'user_logout' %}" onclick="return confirm('Your session would be terminated.\n\nProceed?')" class="nav-link">
                         <i class="nav-icon fas fa-sign-out-alt text-secondary"></i>
                         <p>Logout</p>

@@ -22,6 +22,15 @@ class FormSettings(forms.ModelForm):
 
 
 class CustomUserForm(FormSettings):
+    # Subclasses used only for admin-side "Add X" screens set this True, so
+    # an email that already belongs to another role isn't rejected here -
+    # the view decides whether to attach the new role to that existing
+    # account or reject a duplicate. Public/self-service forms (parent
+    # registration, profile edits) leave this False and keep hard-blocking
+    # duplicate emails, since those must never be able to touch an account
+    # they don't already own.
+    allow_existing_email_on_create = False
+
     email = forms.EmailField(required=True)
     gender = forms.ChoiceField(choices=[('M', 'Male'), ('F', 'Female')])
     first_name = forms.CharField(required=True)
@@ -78,7 +87,7 @@ class CustomUserForm(FormSettings):
     def clean_email(self, *args, **kwargs):
         formEmail = self.cleaned_data['email'].lower()
         if self.instance.pk is None:  # Insert
-            if CustomUser.objects.filter(email=formEmail).exists():
+            if not self.allow_existing_email_on_create and CustomUser.objects.filter(email=formEmail).exists():
                 raise forms.ValidationError(
                     "The given email is already registered")
         else:  # Update
@@ -96,6 +105,11 @@ class CustomUserForm(FormSettings):
 
 
 class StudentForm(CustomUserForm):
+    # Admin-only "Add Student" can attach the Student role to an email that
+    # already belongs to another role (e.g. an existing Staff member) -
+    # see hod_views.add_student.
+    allow_existing_email_on_create = True
+
     def __init__(self, *args, **kwargs):
         super(StudentForm, self).__init__(*args, **kwargs)
 
@@ -107,6 +121,8 @@ class StudentForm(CustomUserForm):
 
 
 class AdminForm(CustomUserForm):
+    allow_existing_email_on_create = True
+
     def __init__(self, *args, **kwargs):
         super(AdminForm, self).__init__(*args, **kwargs)
 
@@ -120,6 +136,8 @@ class StaffForm(CustomUserForm):
     is entirely determined by which Subjects they're assigned to teach
     (a teacher can teach subjects in more than one class), not by a
     single field on Staff."""
+
+    allow_existing_email_on_create = True
 
     def __init__(self, *args, **kwargs):
         super(StaffForm, self).__init__(*args, **kwargs)
@@ -266,6 +284,25 @@ class ParentEditForm(ContactNumberValidationMixin, CustomUserForm):
     class Meta(CustomUserForm.Meta):
         model = Parent
         fields = CustomUserForm.Meta.fields + ['contact_number']
+
+
+class GrantParentRoleForm(ContactNumberValidationMixin, forms.Form):
+    """Admin-only "attach the Parent role to an existing account" form -
+    deliberately NOT a way to create a brand-new Parent identity: that
+    still only ever happens through public self-registration + the
+    existing link-request/approval flow. See hod_views.grant_parent_role,
+    which rejects an email that doesn't already belong to an account."""
+
+    email = forms.EmailField()
+    contact_number = forms.CharField(max_length=20)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.visible_fields():
+            field.field.widget.attrs['class'] = 'form-control'
+
+    def clean_email(self):
+        return self.cleaned_data['email'].strip().lower()
 
 
 class ParentLinkRequestForm(forms.Form):

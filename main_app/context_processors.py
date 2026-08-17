@@ -1,4 +1,5 @@
 from .models import NotificationParent, NotificationStaff, NotificationStudent
+from .utils import user_roles
 
 
 def unread_notifications(request):
@@ -6,13 +7,20 @@ def unread_notifications(request):
     if not user or not user.is_authenticated:
         return {}
 
-    if user.user_type == '2':
+    roles = user_roles(user)
+    active_role = request.session.get('active_role', user.user_type)
+
+    if active_role == '2':
         count = NotificationStaff.objects.filter(staff__admin=user, is_read=False).count()
-    elif user.user_type == '3':
+    elif active_role == '3':
         count = NotificationStudent.objects.filter(student__admin=user, is_read=False).count()
-    elif user.user_type == '4':
+    elif active_role == '4':
         count = NotificationParent.objects.filter(parent__admin=user, is_read=False).count()
     else:
         count = 0
 
-    return {'unread_notification_count': count}
+    return {
+        'unread_notification_count': count,
+        'active_role': active_role,
+        'available_roles': roles,
+    }

@@ -12,6 +12,11 @@
         font-weight: bold;
         color: green;
       }
+      .role-attach-note{
+        font-style: italic;
+        font-weight: bold;
+        color: #17a2b8;
+      }
   </style>
 {% endblock custom_css %}
 {% block page_title %}{{page_title}}{% endblock page_title %}
@@ -60,7 +65,7 @@
             }).done(function(response){
                 if (response == "True"){
                     $(".email_error").remove()
-                    $("<span class='invalid email_error'>Email Address Already Exist</span>").insertAfter("#id_email");
+                    $("<span class='role-attach-note email_error'>This email already has an account - submitting will add the Student role to it. Their existing password/photo won't change.</span>").insertAfter("#id_email");
                 }
                 else{
                     $(".email_error").remove()

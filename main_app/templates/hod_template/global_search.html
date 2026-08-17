@@ -32,7 +32,11 @@
                                 <tr>
                                     <td>{{ row.user.last_name }}, {{ row.user.first_name }}</td>
                                     <td>{{ row.user.email }}</td>
-                                    <td>{{ row.role_label }}</td>
+                                    <td>
+                                        {% for role in row.roles %}
+                                        <span class="badge badge-info">{{ role.label }}</span>
+                                        {% endfor %}
+                                    </td>
                                     <td>
                                         {% if row.user.is_active %}
                                         <span class="badge badge-success">Active</span>
@@ -41,9 +45,9 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if row.edit_url %}
-                                        <a href="{{ row.edit_url }}" class="btn btn-primary btn-sm">Edit</a>
-                                        {% endif %}
+                                        {% for role in row.roles %}
+                                        <a href="{{ role.edit_url }}" class="btn btn-primary btn-sm">Edit {{ role.label }}</a>
+                                        {% endfor %}
                                     </td>
                                 </tr>
                                 {% endfor %}

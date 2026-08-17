@@ -188,6 +188,43 @@ def staff_class_names_map(staff_ids):
     return {staff_id: ', '.join(sorted(names)) for staff_id, names in by_staff.items()}
 
 
+ROLE_MODELS = [('1', 'Admin', 'admin'), ('2', 'Staff', 'staff'),
+               ('3', 'Student', 'student'), ('4', 'Parent', 'parent')]
+
+ROLE_HOME_URL_NAMES = {'1': 'admin_home', '2': 'staff_home', '3': 'student_home', '4': 'parent_home'}
+
+
+def user_roles(user):
+    """[(code, label), ...] for every role `user` currently holds, derived
+    from which profile row actually exists - NOT from user.user_type,
+    which only means "the role picked at signup / default landing role,"
+    not an exhaustive list once one account can hold more than one role."""
+    return [(code, label) for code, label, attr in ROLE_MODELS if hasattr(user, attr)]
+
+
+def grant_role(user, role_code, **extra):
+    """Idempotently attach role `role_code` to an existing CustomUser -
+    used by the admin-side "add an existing email to another role" flows.
+    Never touches password/photo/name - those stay whatever they already
+    are on the shared account. Returns the (possibly just-created)
+    profile row."""
+    from .models import Admin, Parent, Staff, Student
+    model = {'1': Admin, '2': Staff, '3': Student, '4': Parent}[role_code]
+    obj, _ = model.objects.get_or_create(admin=user)
+    for field, value in extra.items():
+        setattr(obj, field, value)
+    if extra:
+        obj.save()
+    return obj
+
+
+def role_home_url(role_code):
+    """URL of the home/dashboard page for `role_code`, falling back to the
+    login page for an unrecognized code rather than raising NoReverseMatch."""
+    from django.urls import reverse
+    return reverse(ROLE_HOME_URL_NAMES.get(role_code, 'login_page'))
+
+
 def parent_can_access_student(parent, student_id):
     """The Student `parent` has an approved link to, or None.
 

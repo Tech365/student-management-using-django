@@ -16,6 +16,7 @@ from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      NotificationParent, NotificationStaff,
                      NotificationStudent, Parent, ParentStudentLink, Session,
                      Staff, Student, StudentResult, Subject)
+from .utils import grant_role, user_roles
 
 PASSWORD = "TestPass9137!"  # must pass AUTH_PASSWORD_VALIDATORS - some tests submit it through a real form
 
@@ -2134,3 +2135,187 @@ class DjangoAdminCompatibilityTests(TestCase):
     def test_change_user_page_loads_and_saves(self):
         response = self.client.get(f'/admin/main_app/customuser/{self.superuser.id}/change/')
         self.assertEqual(response.status_code, 200)
+
+
+class MultiRoleAccountTests(TestCase):
+    """Same email can now hold more than one role (e.g. Staff and Parent),
+    attached only by an Admin from the Manage screens - see
+    utils.user_roles/grant_role and the existing_user branches in
+    hod_views.add_admin/add_staff/add_student/grant_parent_role."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin_user = make_admin("multirole_admin@example.com")
+        self.client.login(username="multirole_admin@example.com", password=PASSWORD)
+        self.course = make_course("Multirole Course")
+        self.session = make_session()
+
+    def test_add_staff_attaches_role_to_existing_email_without_touching_password(self):
+        parent = make_parent("shared_email@example.com")
+        old_password_hash = parent.admin.password
+        response = self.client.post(reverse('add_staff'), {
+            'first_name': 'New', 'last_name': 'Name', 'email': 'shared_email@example.com',
+            'gender': 'M', 'address': 'addr',
+        })
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email='shared_email@example.com')
+        self.assertTrue(hasattr(user, 'staff'))
+        self.assertTrue(hasattr(user, 'parent'))  # untouched
+        self.assertEqual(user.password, old_password_hash)  # untouched
+        self.assertEqual(CustomUser.objects.filter(email='shared_email@example.com').count(), 1)
+
+    def test_add_staff_rejects_email_that_already_has_that_role(self):
+        make_staff("already_staff@example.com", self.course)
+        response = self.client.post(reverse('add_staff'), {
+            'first_name': 'New', 'last_name': 'Name', 'email': 'already_staff@example.com',
+            'gender': 'M', 'address': 'addr',
+        })
+        self.assertEqual(response.status_code, 200)  # re-rendered, not redirected
+        self.assertContains(response, 'already a Staff member')
+
+    def test_add_staff_still_creates_fresh_account_for_new_email(self):
+        response = self.client.post(reverse('add_staff'), {
+            'first_name': 'Brand', 'last_name': 'New', 'email': 'brand_new_staff@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD,
+            'profile_pic': make_image_file(),
+        })
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email='brand_new_staff@example.com')
+        self.assertEqual(user_roles(user), [('2', 'Staff')])
+
+    def test_add_student_attaches_role_with_course_and_session(self):
+        staff = make_staff("future_student@example.com", self.course)
+        response = self.client.post(reverse('add_student'), {
+            'first_name': 'New', 'last_name': 'Name', 'email': 'future_student@example.com',
+            'gender': 'M', 'address': 'addr', 'course': self.course.id, 'session': self.session.id,
+        })
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email='future_student@example.com')
+        self.assertTrue(hasattr(user, 'student'))
+        self.assertEqual(user.student.course, self.course)
+        self.assertTrue(hasattr(user, 'staff'))  # untouched
+
+    def test_grant_parent_role_attaches_to_existing_account(self):
+        make_staff("future_parent@example.com", self.course)
+        response = self.client.post(reverse('grant_parent_role'), {
+            'email': 'future_parent@example.com', 'contact_number': '5551234',
+        })
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email='future_parent@example.com')
+        self.assertTrue(hasattr(user, 'parent'))
+        self.assertTrue(hasattr(user, 'staff'))
+
+    def test_grant_parent_role_rejects_unknown_email(self):
+        response = self.client.post(reverse('grant_parent_role'), {
+            'email': 'nobody_here@example.com', 'contact_number': '5551234',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'No existing account')
+        self.assertFalse(CustomUser.objects.filter(email='nobody_here@example.com').exists())
+
+    def test_grant_parent_role_rejects_non_numeric_contact_number(self):
+        make_staff("bad_contact_future_parent@example.com", self.course)
+        response = self.client.post(reverse('grant_parent_role'), {
+            'email': 'bad_contact_future_parent@example.com', 'contact_number': '555-1234',
+        })
+        self.assertEqual(response.status_code, 200)
+        user = CustomUser.objects.get(email='bad_contact_future_parent@example.com')
+        self.assertFalse(hasattr(user, 'parent'))
+
+    def test_delete_staff_on_multi_role_account_keeps_other_role(self):
+        staff = make_staff("keep_parent@example.com", self.course)
+        grant_role(staff.admin, '4', contact_number='5551234')
+        response = self.client.get(reverse('delete_staff', args=[staff.id]))
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email='keep_parent@example.com')
+        self.assertFalse(hasattr(user, 'staff'))
+        self.assertTrue(hasattr(user, 'parent'))
+
+    def test_delete_staff_on_single_role_account_removes_whole_account(self):
+        staff = make_staff("only_role@example.com", self.course)
+        response = self.client.get(reverse('delete_staff', args=[staff.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(CustomUser.objects.filter(email='only_role@example.com').exists())
+
+    def test_manage_staff_lists_user_whose_primary_role_is_admin(self):
+        admin_extra = make_admin("mgmt_admin_extra@example.com")
+        grant_role(admin_extra, '2')  # also Staff now, but user_type stays '1'
+        response = self.client.get(reverse('manage_staff'))
+        self.assertContains(response, 'mgmt_admin_extra@example.com')
+
+
+class MultiRoleLoginTests(TestCase):
+    """Login/session behavior for accounts with more than one role - see
+    views.doLogin/choose_role and middleware.LoginCheckMiddleWare."""
+
+    def setUp(self):
+        cache.clear()
+        self.course = make_course()
+        self.session = make_session()
+
+    def test_single_role_login_skips_role_picker(self):
+        make_staff("solo_staff@example.com", self.course)
+        response = self.client.post(reverse('user_login'), {
+            'email': 'solo_staff@example.com', 'password': PASSWORD,
+        })
+        self.assertRedirects(response, reverse('staff_home'))
+        self.assertEqual(self.client.session['active_role'], '2')
+
+    def test_multi_role_login_lands_on_choose_role(self):
+        staff = make_staff("multi_login@example.com", self.course)
+        grant_role(staff.admin, '4', contact_number='5551234')
+        # Don't let assertRedirects follow the redirect - that issues a
+        # second request to choose_role, which the middleware's self-heal
+        # would populate active_role for, defeating the point of this check.
+        response = self.client.post(reverse('user_login'), {
+            'email': 'multi_login@example.com', 'password': PASSWORD,
+        })
+        self.assertRedirects(response, reverse('choose_role'), fetch_redirect_response=False)
+        self.assertNotIn('active_role', self.client.session)
+
+    def test_choose_role_sets_session_and_redirects(self):
+        staff = make_staff("choose_flow@example.com", self.course)
+        grant_role(staff.admin, '4', contact_number='5551234')
+        self.client.post(reverse('user_login'), {
+            'email': 'choose_flow@example.com', 'password': PASSWORD,
+        })
+        response = self.client.post(reverse('choose_role'), {'role': '4'})
+        self.assertRedirects(response, reverse('parent_home'))
+        self.assertEqual(self.client.session['active_role'], '4')
+
+    def test_choose_role_rejects_role_the_user_doesnt_have(self):
+        # Needs a genuinely multi-role account - a single-role account
+        # short-circuits straight through choose_role instead of ever
+        # rendering the picker, so it wouldn't exercise this guard at all.
+        staff = make_staff("guard_flow@example.com", self.course)
+        grant_role(staff.admin, '4', contact_number='5551234')
+        self.client.post(reverse('user_login'), {
+            'email': 'guard_flow@example.com', 'password': PASSWORD,
+        })
+        response = self.client.post(reverse('choose_role'), {'role': '1'}, follow=True)
+        self.assertContains(response, 'Invalid role selection')
+
+    def test_active_role_gates_access_even_when_user_also_has_other_role(self):
+        staff = make_staff("gate_flow@example.com", self.course)
+        grant_role(staff.admin, '1')  # also an Admin
+        self.client.post(reverse('user_login'), {
+            'email': 'gate_flow@example.com', 'password': PASSWORD,
+        })
+        self.client.post(reverse('choose_role'), {'role': '2'})  # continue as Staff
+        # hod_views is blocked while active_role is Staff, even though this
+        # account also technically has the Admin role - "one dashboard at
+        # a time" has to actually hold, not just be true at login.
+        response = self.client.get(reverse('admin_home'))
+        self.assertRedirects(response, reverse('staff_home'))
+
+    def test_stale_session_self_heals_to_a_valid_role(self):
+        # self.client.login() bypasses doLogin entirely, so it never sets
+        # active_role - this is exactly the "pre-existing session" case the
+        # middleware's self-heal path exists for (also lets every other
+        # test class in this suite keep using self.client.login()
+        # unchanged even though multi-role accounts now exist).
+        make_staff("selfheal@example.com", self.course)
+        self.client.login(username="selfheal@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_home'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.session['active_role'], '2')

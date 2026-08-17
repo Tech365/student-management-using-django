@@ -7,7 +7,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render, reverse
 
 from .models import Attendance, Session, Staff, Subject
-from .utils import rate_limited
+from .utils import rate_limited, role_home_url, user_roles
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +16,11 @@ logger = logging.getLogger(__name__)
 
 def login_page(request):
     if request.user.is_authenticated:
-        if request.user.user_type == '1':
-            return redirect(reverse("admin_home"))
-        elif request.user.user_type == '2':
-            return redirect(reverse("staff_home"))
-        elif request.user.user_type == '4':
-            return redirect(reverse("parent_home"))
-        else:
-            return redirect(reverse("student_home"))
+        roles = dict(user_roles(request.user))
+        active_role = request.session.get('active_role')
+        if active_role in roles:
+            return redirect(role_home_url(active_role))
+        return redirect(reverse("choose_role"))
     return render(request, 'main_app/login.html')
 
 
@@ -41,19 +38,39 @@ def doLogin(request, **kwargs):
         #Authenticate
         user = authenticate(request, username=request.POST.get('email'), password=request.POST.get('password'))
         if user is not None:
+            roles = user_roles(user)
+            if not roles:
+                messages.error(request, "Your account has no role assigned. Please contact the Madrasa Admin.")
+                return redirect("/")
             login(request, user)
-            if user.user_type == '1':
-                return redirect(reverse("admin_home"))
-            elif user.user_type == '2':
-                return redirect(reverse("staff_home"))
-            elif user.user_type == '4':
-                return redirect(reverse("parent_home"))
-            else:
-                return redirect(reverse("student_home"))
+            if len(roles) == 1:
+                request.session['active_role'] = roles[0][0]
+                return redirect(role_home_url(roles[0][0]))
+            return redirect(reverse("choose_role"))
         else:
             messages.error(request, "Invalid details")
             return redirect("/")
 
+
+def choose_role(request):
+    """Lets a multi-role account (e.g. Staff and Parent on the same email)
+    pick which dashboard to use for this session - also doubles as the
+    "Switch Role" destination from the sidebar. Safe to link to
+    unconditionally: a user with zero or one role is redirected straight
+    through instead of seeing an empty/pointless picker."""
+    if not request.user.is_authenticated:
+        return redirect(reverse('login_page'))
+    roles = user_roles(request.user)
+    if len(roles) <= 1:
+        return redirect(role_home_url(roles[0][0]) if roles else reverse('login_page'))
+    if request.method == 'POST':
+        role_code = request.POST.get('role')
+        if role_code not in dict(roles):
+            messages.error(request, "Invalid role selection.")
+            return redirect(reverse('choose_role'))
+        request.session['active_role'] = role_code
+        return redirect(role_home_url(role_code))
+    return render(request, 'main_app/choose_role.html', {'roles': roles, 'page_title': 'Choose how to continue'})
 
 
 def logout_user(request):
@@ -68,12 +85,13 @@ def get_attendance(request):
     # page (must be scoped to subjects this teacher actually teaches, same
     # as staff_views.get_students/save_attendance) - anyone else has no
     # legitimate reason to see another class's attendance-taken dates.
-    if request.user.user_type not in ('1', '2'):
+    active_role = request.session.get('active_role')
+    if active_role not in ('1', '2'):
         return JsonResponse({'error': 'Not authorized'}, status=403)
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
     try:
-        if request.user.user_type == '2':
+        if active_role == '2':
             staff = get_object_or_404(Staff, admin=request.user)
             subject = get_object_or_404(Subject, id=subject_id, staff=staff)
         else:

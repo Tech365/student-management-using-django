@@ -83,7 +83,7 @@
                 </li>
             </ul>
 
-            {% if request.user.user_type == '1' %}
+            {% if active_role == '1' %}
             <form class="form-inline ml-auto mr-3" action="{% url 'global_search' %}" method="get">
                 <div class="input-group input-group-sm">
                     <input class="form-control" type="search" name="q" placeholder="Search people..."
@@ -120,11 +120,11 @@
                             
                             <ol class="breadcrumb float-sm-right">
                                 <li class="breadcrumb-item">
-                                    {% if request.user.user_type == '1' %}
+                                    {% if active_role == '1' %}
                                     <a href="{% url 'admin_home' %}">Home</a>
-                                    {% elif request.user.user_type == '2' %}
+                                    {% elif active_role == '2' %}
                                     <a href="{% url 'staff_home' %}">Home</a>
-                                    {% elif request.user.user_type == '4' %}
+                                    {% elif active_role == '4' %}
                                     <a href="{% url 'parent_home' %}">Home</a>
                                     {% else %}
                                     <a href="{% url 'student_home' %}">Home</a>

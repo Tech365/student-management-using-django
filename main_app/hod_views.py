@@ -16,19 +16,19 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 
-from .forms import (AdminForm, CourseForm, CSVUploadForm, ParentEditForm,
-                    SessionForm, StaffForm, StudentForm, SubjectForm)
+from .forms import (AdminForm, CourseForm, CSVUploadForm, GrantParentRoleForm,
+                    ParentEditForm, SessionForm, StaffForm, StudentForm, SubjectForm)
 from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      CustomUser, FeedbackStaff, FeedbackStudent,
                      LeaveReportStaff, LeaveReportStudent, NotificationParent,
                      NotificationStaff, NotificationStudent, Parent,
                      ParentStudentLink, Session, Staff, Student,
                      StudentResult, Subject)
-from .utils import (csv_response, leave_decision_message, log_action,
+from .utils import (csv_response, grant_role, leave_decision_message, log_action,
                     notify_student_leave_decision, paginate,
                     parent_link_decision_message, read_csv_rows,
                     send_notification_email, send_push_notification,
-                    session_course_ids_map, staff_class_names_map)
+                    session_course_ids_map, staff_class_names_map, user_roles)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
@@ -80,17 +80,21 @@ def global_search(request):
             Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(email__icontains=query)
         ).select_related('admin', 'staff', 'student', 'parent').order_by('last_name', 'first_name')[:50]
         role_edit_url = {'1': 'edit_admin', '2': 'edit_staff', '3': 'edit_student', '4': 'edit_parent'}
-        role_label = {'1': 'Admin', '2': 'Staff', '3': 'Student', '4': 'Parent'}
+        role_object_attr = {'1': 'admin', '2': 'staff', '3': 'student', '4': 'parent'}
         for user in matches:
-            role_object = {'1': getattr(user, 'admin', None), '2': getattr(user, 'staff', None),
-                            '3': getattr(user, 'student', None), '4': getattr(user, 'parent', None)}.get(user.user_type)
-            if role_object is None:
+            # A match can hold more than one role now - list every one
+            # they have, each with its own edit link, rather than only
+            # the primary user_type (which would silently hide the rest).
+            roles = []
+            for code, label in user_roles(user):
+                role_object = getattr(user, role_object_attr[code])
+                roles.append({
+                    'label': label,
+                    'edit_url': reverse(role_edit_url[code], args=[role_object.id]),
+                })
+            if not roles:
                 continue
-            results.append({
-                'user': user,
-                'role_label': role_label.get(user.user_type, 'Unknown'),
-                'edit_url': reverse(role_edit_url[user.user_type], args=[role_object.id]) if user.user_type in role_edit_url else None,
-            })
+            results.append({'user': user, 'roles': roles})
     context = {
         'query': query,
         'results': results,
@@ -99,37 +103,62 @@ def global_search(request):
     return render(request, 'hod_template/global_search.html', context)
 
 
+def _existing_user_for_role_attach(request):
+    """The CustomUser already registered under the submitted email, or None
+    if this is a POST to create a brand-new account. Also relaxes the
+    password/photo fields to optional on `form` when one is found - those
+    stay whatever they already are on the shared account, so an admin
+    attaching a second role shouldn't be forced to re-enter them."""
+    if request.method != 'POST':
+        return None
+    email = (request.POST.get('email') or '').strip().lower()
+    return CustomUser.objects.filter(email=email).first() if email else None
+
+
 def add_admin(request):
     form = AdminForm(request.POST or None, request.FILES or None)
+    existing_user = _existing_user_for_role_attach(request)
+    if existing_user is not None:
+        form.fields['password'].required = False
+        form.fields['profile_pic'].required = False
     context = {'form': form, 'page_title': 'Add Admin'}
     if request.method == 'POST':
         if form.is_valid():
-            first_name = form.cleaned_data.get('first_name')
-            last_name = form.cleaned_data.get('last_name')
-            address = form.cleaned_data.get('address')
-            email = form.cleaned_data.get('email')
-            gender = form.cleaned_data.get('gender')
-            password = form.cleaned_data.get('password')
-            passport = request.FILES.get('profile_pic')
-            fs = FileSystemStorage()
-            filename = fs.save(passport.name, passport)
-            passport_url = fs.url(filename)
-            try:
-                # create_user (not create_superuser): this grants the app-level
-                # HOD/Admin role (user_type=1) but not is_staff/is_superuser,
-                # so the new account can't log into Django's own /admin/ site.
-                user = CustomUser.objects.create_user(
-                    email=email, password=password, user_type=1, first_name=first_name, last_name=last_name, profile_pic=passport_url)
-                user.gender = gender
-                user.address = address
-                user.save()
-                log_action(request, 'created', 'Admin', user)
-                messages.success(request, "Successfully Added")
-                return redirect(reverse('add_admin'))
+            if existing_user is not None:
+                if hasattr(existing_user, 'admin'):
+                    messages.error(request, f"{existing_user} is already an Admin.")
+                else:
+                    grant_role(existing_user, '1')
+                    log_action(request, 'granted', 'Admin', existing_user)
+                    messages.success(request, f"Admin role added to {existing_user}'s existing account.")
+                    return redirect(reverse('add_admin'))
+            else:
+                first_name = form.cleaned_data.get('first_name')
+                last_name = form.cleaned_data.get('last_name')
+                address = form.cleaned_data.get('address')
+                email = form.cleaned_data.get('email')
+                gender = form.cleaned_data.get('gender')
+                password = form.cleaned_data.get('password')
+                passport = request.FILES.get('profile_pic')
+                fs = FileSystemStorage()
+                filename = fs.save(passport.name, passport)
+                passport_url = fs.url(filename)
+                try:
+                    # create_user (not create_superuser): this grants the app-level
+                    # HOD/Admin role (user_type=1) but not is_staff/is_superuser,
+                    # so the new account can't log into Django's own /admin/ site.
+                    user = CustomUser.objects.create_user(
+                        email=email, password=password, user_type=1, first_name=first_name, last_name=last_name, profile_pic=passport_url)
+                    user.gender = gender
+                    user.address = address
+                    user.save()
+                    log_action(request, 'created', 'Admin', user)
+                    messages.success(request, "Successfully Added")
+                    return redirect(reverse('add_admin'))
 
-            except Exception as e:
-                logger.exception('Unhandled error in add_admin')
-                messages.error(request, "Couldn't save this - " + str(e))
+                except Exception as e:
+                    logger.exception('Unhandled error in add_admin')
+                    messages.error(request, "Couldn't save this - " + str(e))
         else:
             messages.error(request, "Please check the form - some required fields are missing or invalid.")
 
@@ -138,32 +167,45 @@ def add_admin(request):
 
 def add_staff(request):
     form = StaffForm(request.POST or None, request.FILES or None)
+    existing_user = _existing_user_for_role_attach(request)
+    if existing_user is not None:
+        form.fields['password'].required = False
+        form.fields['profile_pic'].required = False
     context = {'form': form, 'page_title': 'Add Staff'}
     if request.method == 'POST':
         if form.is_valid():
-            first_name = form.cleaned_data.get('first_name')
-            last_name = form.cleaned_data.get('last_name')
-            address = form.cleaned_data.get('address')
-            email = form.cleaned_data.get('email')
-            gender = form.cleaned_data.get('gender')
-            password = form.cleaned_data.get('password')
-            passport = request.FILES.get('profile_pic')
-            fs = FileSystemStorage()
-            filename = fs.save(passport.name, passport)
-            passport_url = fs.url(filename)
-            try:
-                user = CustomUser.objects.create_user(
-                    email=email, password=password, user_type=2, first_name=first_name, last_name=last_name, profile_pic=passport_url)
-                user.gender = gender
-                user.address = address
-                user.save()
-                log_action(request, 'created', 'Staff', user)
-                messages.success(request, "Successfully Added")
-                return redirect(reverse('add_staff'))
+            if existing_user is not None:
+                if hasattr(existing_user, 'staff'):
+                    messages.error(request, f"{existing_user} is already a Staff member.")
+                else:
+                    grant_role(existing_user, '2')
+                    log_action(request, 'granted', 'Staff', existing_user)
+                    messages.success(request, f"Staff role added to {existing_user}'s existing account.")
+                    return redirect(reverse('add_staff'))
+            else:
+                first_name = form.cleaned_data.get('first_name')
+                last_name = form.cleaned_data.get('last_name')
+                address = form.cleaned_data.get('address')
+                email = form.cleaned_data.get('email')
+                gender = form.cleaned_data.get('gender')
+                password = form.cleaned_data.get('password')
+                passport = request.FILES.get('profile_pic')
+                fs = FileSystemStorage()
+                filename = fs.save(passport.name, passport)
+                passport_url = fs.url(filename)
+                try:
+                    user = CustomUser.objects.create_user(
+                        email=email, password=password, user_type=2, first_name=first_name, last_name=last_name, profile_pic=passport_url)
+                    user.gender = gender
+                    user.address = address
+                    user.save()
+                    log_action(request, 'created', 'Staff', user)
+                    messages.success(request, "Successfully Added")
+                    return redirect(reverse('add_staff'))
 
-            except Exception as e:
-                logger.exception('Unhandled error in add_staff')
-                messages.error(request, "Couldn't save this - " + str(e))
+                except Exception as e:
+                    logger.exception('Unhandled error in add_staff')
+                    messages.error(request, "Couldn't save this - " + str(e))
         else:
             messages.error(request, "Please check the form - some required fields are missing or invalid.")
 
@@ -172,38 +214,80 @@ def add_staff(request):
 
 def add_student(request):
     student_form = StudentForm(request.POST or None, request.FILES or None)
+    existing_user = _existing_user_for_role_attach(request)
+    if existing_user is not None:
+        student_form.fields['password'].required = False
+        student_form.fields['profile_pic'].required = False
     context = {'form': student_form, 'page_title': 'Add Student'}
     if request.method == 'POST':
         if student_form.is_valid():
-            first_name = student_form.cleaned_data.get('first_name')
-            last_name = student_form.cleaned_data.get('last_name')
-            address = student_form.cleaned_data.get('address')
-            email = student_form.cleaned_data.get('email')
-            gender = student_form.cleaned_data.get('gender')
-            password = student_form.cleaned_data.get('password')
             course = student_form.cleaned_data.get('course')
             session = student_form.cleaned_data.get('session')
-            passport = request.FILES['profile_pic']
-            fs = FileSystemStorage()
-            filename = fs.save(passport.name, passport)
-            passport_url = fs.url(filename)
-            try:
-                user = CustomUser.objects.create_user(
-                    email=email, password=password, user_type=3, first_name=first_name, last_name=last_name, profile_pic=passport_url)
-                user.gender = gender
-                user.address = address
-                user.student.session = session
-                user.student.course = course
-                user.save()
-                log_action(request, 'created', 'Student', user)
-                messages.success(request, "Successfully Added")
-                return redirect(reverse('add_student'))
-            except Exception as e:
-                logger.exception('Unhandled error in add_student')
-                messages.error(request, "Couldn't save this - " + str(e))
+            if existing_user is not None:
+                if hasattr(existing_user, 'student'):
+                    messages.error(request, f"{existing_user} is already a Student.")
+                else:
+                    grant_role(existing_user, '3', course=course, session=session)
+                    log_action(request, 'granted', 'Student', existing_user)
+                    messages.success(request, f"Student role added to {existing_user}'s existing account.")
+                    return redirect(reverse('add_student'))
+            else:
+                first_name = student_form.cleaned_data.get('first_name')
+                last_name = student_form.cleaned_data.get('last_name')
+                address = student_form.cleaned_data.get('address')
+                email = student_form.cleaned_data.get('email')
+                gender = student_form.cleaned_data.get('gender')
+                password = student_form.cleaned_data.get('password')
+                passport = request.FILES.get('profile_pic')
+                fs = FileSystemStorage()
+                filename = fs.save(passport.name, passport)
+                passport_url = fs.url(filename)
+                try:
+                    user = CustomUser.objects.create_user(
+                        email=email, password=password, user_type=3, first_name=first_name, last_name=last_name, profile_pic=passport_url)
+                    user.gender = gender
+                    user.address = address
+                    user.student.session = session
+                    user.student.course = course
+                    user.save()
+                    log_action(request, 'created', 'Student', user)
+                    messages.success(request, "Successfully Added")
+                    return redirect(reverse('add_student'))
+                except Exception as e:
+                    logger.exception('Unhandled error in add_student')
+                    messages.error(request, "Couldn't save this - " + str(e))
         else:
             messages.error(request, "Couldn't save this. Please check the form and try again.")
     return render(request, 'hod_template/add_student_template.html', context)
+
+
+def grant_parent_role(request):
+    """Attach the Parent role to an email that already has an account -
+    deliberately attach-only (see GrantParentRoleForm's docstring): a
+    brand-new Parent identity still only comes from public
+    self-registration + the existing link-request/approval flow."""
+    form = GrantParentRoleForm(request.POST or None)
+    context = {'form': form, 'page_title': 'Grant Parent Role'}
+    if request.method == 'POST':
+        if form.is_valid():
+            email = form.cleaned_data['email']
+            contact_number = form.cleaned_data['contact_number']
+            existing_user = CustomUser.objects.filter(email=email).first()
+            if existing_user is None:
+                messages.error(
+                    request,
+                    "No existing account with that email - new parents should "
+                    "register at /parent/register/.")
+            elif hasattr(existing_user, 'parent'):
+                messages.error(request, f"{existing_user} is already a Parent.")
+            else:
+                grant_role(existing_user, '4', contact_number=contact_number)
+                log_action(request, 'granted', 'Parent', existing_user)
+                messages.success(request, f"Parent role added to {existing_user}'s existing account.")
+                return redirect(reverse('grant_parent_role'))
+        else:
+            messages.error(request, "Please check the form - some required fields are missing or invalid.")
+    return render(request, 'hod_template/grant_parent_role.html', context)
 
 
 def add_course(request):
@@ -440,7 +524,7 @@ def bulk_upload_students(request):
 def manage_admin(request):
     # No paginate() here - DataTables (see main_app/templates/main_app/base.html)
     # owns search/sort/paging for this table client-side, over the full list.
-    admins = CustomUser.objects.filter(user_type=1).select_related('admin').order_by('id')
+    admins = CustomUser.objects.filter(admin__isnull=False).select_related('admin').order_by('id')
     context = {
         'admins': admins,
         'page_title': 'Manage Admins'
@@ -449,7 +533,7 @@ def manage_admin(request):
 
 
 def manage_parent(request):
-    parents = CustomUser.objects.filter(user_type=4).select_related('parent').order_by('id')
+    parents = CustomUser.objects.filter(parent__isnull=False).select_related('parent').order_by('id')
     links_by_parent = {}
     for link in ParentStudentLink.objects.filter(parent__admin__in=parents).select_related('student__admin'):
         links_by_parent.setdefault(link.parent_id, []).append(link)
@@ -463,7 +547,7 @@ def manage_parent(request):
 
 
 def manage_staff(request):
-    allStaff = CustomUser.objects.filter(user_type=2).select_related('staff').order_by('id')
+    allStaff = CustomUser.objects.filter(staff__isnull=False).select_related('staff').order_by('id')
     classes_by_staff = staff_class_names_map([user.staff.id for user in allStaff])
     for user in allStaff:
         user.class_names = classes_by_staff.get(user.staff.id, '—')
@@ -475,7 +559,7 @@ def manage_staff(request):
 
 
 def manage_staff_csv(request):
-    staff_qs = CustomUser.objects.filter(user_type=2).select_related('staff').order_by('id')
+    staff_qs = CustomUser.objects.filter(staff__isnull=False).select_related('staff').order_by('id')
     classes_by_staff = staff_class_names_map([user.staff.id for user in staff_qs])
     rows = [
         (user.last_name, user.first_name, user.email, user.gender,
@@ -486,7 +570,7 @@ def manage_staff_csv(request):
 
 
 def manage_student(request):
-    students = CustomUser.objects.filter(user_type=3).select_related('student', 'student__course', 'student__session').order_by('id')
+    students = CustomUser.objects.filter(student__isnull=False).select_related('student', 'student__course', 'student__session').order_by('id')
     context = {
         'students': students,
         'page_title': 'Manage Students'
@@ -495,7 +579,7 @@ def manage_student(request):
 
 
 def manage_student_csv(request):
-    students = CustomUser.objects.filter(user_type=3).select_related(
+    students = CustomUser.objects.filter(student__isnull=False).select_related(
         'student', 'student__course', 'student__session').order_by('id')
     rows = [
         (user.last_name, user.first_name, user.email, user.gender,
@@ -1087,7 +1171,7 @@ def admin_view_profile(request):
 
 
 def admin_notify_staff(request):
-    staff = CustomUser.objects.filter(user_type=2).select_related('staff')
+    staff = CustomUser.objects.filter(staff__isnull=False).select_related('staff')
     classes_by_staff = staff_class_names_map([user.staff.id for user in staff])
     for user in staff:
         user.class_names = classes_by_staff.get(user.staff.id, '—')
@@ -1099,7 +1183,7 @@ def admin_notify_staff(request):
 
 
 def admin_notify_student(request):
-    student = CustomUser.objects.filter(user_type=3)
+    student = CustomUser.objects.filter(student__isnull=False)
     context = {
         'page_title': "Send Notifications To Students",
         'students': student
@@ -1108,7 +1192,7 @@ def admin_notify_student(request):
 
 
 def admin_notify_parent(request):
-    parents = CustomUser.objects.filter(user_type=4).select_related('parent')
+    parents = CustomUser.objects.filter(parent__isnull=False).select_related('parent')
     links_by_parent = {}
     for link in ParentStudentLink.objects.filter(parent__admin__in=parents, status=1).select_related('student__admin'):
         links_by_parent.setdefault(link.parent_id, []).append(link)
@@ -1236,13 +1320,22 @@ def toggle_admin_status(request, admin_id):
 
 
 def delete_admin(request, admin_id):
-    admin_user = get_object_or_404(CustomUser, admin__id=admin_id)
-    if admin_user.id == request.user.id:
+    admin = get_object_or_404(Admin, id=admin_id)
+    user = admin.admin
+    if user.id == request.user.id:
         messages.error(request, "You cannot delete your own account.")
         return redirect(reverse('manage_admin'))
     try:
-        admin_repr = str(admin_user)
-        admin_user.delete()
+        admin_repr = str(user)
+        # Only this role's own row - a person who also holds another role
+        # (e.g. Staff) must keep that role/account intact. The CustomUser
+        # itself only goes away once no role is left on it at all.
+        admin.delete()
+        # Re-fetch rather than reuse `user` - accessing admin.admin above
+        # cached the (now stale) reverse "admin" relation onto it, so
+        # user_roles(user) would still see the just-deleted role otherwise.
+        if not user_roles(CustomUser.objects.get(pk=user.pk)):
+            user.delete()
         log_action(request, 'deleted', 'Admin', admin_repr)
         messages.success(request, "Admin deleted successfully!")
     except Exception:
@@ -1262,10 +1355,13 @@ def toggle_parent_status(request, parent_id):
 
 
 def delete_parent(request, parent_id):
-    parent_user = get_object_or_404(CustomUser, parent__id=parent_id)
+    parent = get_object_or_404(Parent, id=parent_id)
+    user = parent.admin
     try:
-        parent_repr = str(parent_user)
-        parent_user.delete()
+        parent_repr = str(user)
+        parent.delete()
+        if not user_roles(CustomUser.objects.get(pk=user.pk)):
+            user.delete()
         log_action(request, 'deleted', 'Parent', parent_repr)
         messages.success(request, "Parent deleted successfully!")
     except Exception:
@@ -1275,10 +1371,13 @@ def delete_parent(request, parent_id):
 
 
 def delete_staff(request, staff_id):
-    staff = get_object_or_404(CustomUser, staff__id=staff_id)
+    staff = get_object_or_404(Staff, id=staff_id)
+    user = staff.admin
     try:
-        staff_repr = str(staff)
+        staff_repr = str(user)
         staff.delete()
+        if not user_roles(CustomUser.objects.get(pk=user.pk)):
+            user.delete()
         log_action(request, 'deleted', 'Staff', staff_repr)
         messages.success(request, "Staff deleted successfully!")
     except Exception:
@@ -1288,10 +1387,13 @@ def delete_staff(request, staff_id):
 
 
 def delete_student(request, student_id):
-    student = get_object_or_404(CustomUser, student__id=student_id)
+    student = get_object_or_404(Student, id=student_id)
+    user = student.admin
     try:
-        student_repr = str(student)
+        student_repr = str(user)
         student.delete()
+        if not user_roles(CustomUser.objects.get(pk=user.pk)):
+            user.delete()
         log_action(request, 'deleted', 'Student', student_repr)
         messages.success(request, "Student deleted successfully!")
     except Exception:
