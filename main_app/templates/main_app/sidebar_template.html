@@ -233,6 +233,13 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    {% url 'report_attendance_not_taken' as report_attendance_not_taken %}
+                    <a href="{{report_attendance_not_taken}}" class="nav-link {% if report_attendance_not_taken == request.path %} active {% endif %}">
+                        <i class="nav-icon fas fa-exclamation-triangle text-teal"></i>
+                        <p>Attendance Not Taken</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     {% url 'report_student_attendance' as report_student_attendance %}
                     <a href="{{report_student_attendance}}" class="nav-link {% if report_student_attendance == request.path %} active {% endif %}">
                         <i class="nav-icon fas fa-chart-line text-teal"></i>

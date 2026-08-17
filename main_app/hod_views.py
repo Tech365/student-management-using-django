@@ -1689,6 +1689,46 @@ def _attendance_summary_data(request):
     }
 
 
+def _attendance_not_taken_data(request):
+    selected_date = request.GET.get('date') or date.today().isoformat()
+    course_id = request.GET.get('course') or ''
+
+    subjects = Subject.objects.select_related('course', 'staff', 'staff__admin').order_by('course__name', 'name')
+    if course_id:
+        subjects = subjects.filter(course_id=course_id)
+
+    # Not scoped by Session - a subject with attendance taken in any
+    # session on this date already has *something* recorded for it, and
+    # session is a batch/cohort concept the person checking "did this
+    # class get marked today" doesn't need to think about up front.
+    taken_subject_ids = set(
+        Attendance.objects.filter(date=selected_date, subject__in=subjects)
+        .values_list('subject_id', flat=True)
+    )
+    not_taken = [
+        {'course': subject.course.name, 'subject': subject.name, 'teacher': str(subject.staff)}
+        for subject in subjects if subject.id not in taken_subject_ids
+    ]
+    return {'selected_date': selected_date, 'selected_course': course_id, 'not_taken': not_taken}
+
+
+def report_attendance_not_taken(request):
+    data = _attendance_not_taken_data(request)
+    context = {
+        'page_title': 'Attendance Not Taken',
+        'courses': Course.objects.order_by('name'),
+        **data,
+    }
+    return render(request, 'hod_template/report_attendance_not_taken.html', context)
+
+
+def report_attendance_not_taken_csv(request):
+    data = _attendance_not_taken_data(request)
+    rows = [(row['course'], row['subject'], row['teacher']) for row in data['not_taken']]
+    filename = f"attendance_not_taken_{data['selected_date']}.csv"
+    return csv_response(filename, ['Class', 'Subject', 'Teacher'], rows)
+
+
 def report_attendance_summary(request):
     data = _attendance_summary_data(request)
     sessions = Session.objects.order_by('-start_year')

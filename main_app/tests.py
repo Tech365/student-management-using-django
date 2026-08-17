@@ -915,6 +915,66 @@ class AttendanceSummaryReportTests(TestCase):
         self.assertEqual(summary[0]['present'], 1)
 
 
+class AttendanceNotTakenReportTests(TestCase):
+    """Lists subjects with no Attendance row at all for a given date - the
+    inverse of the summary report above, which only ever sees subjects
+    that already have attendance recorded."""
+
+    def setUp(self):
+        make_admin("report_admin_not_taken@example.com")
+        self.client.login(username="report_admin_not_taken@example.com", password=PASSWORD)
+        self.course = make_course("Not Taken Course")
+        self.session = make_session()
+        self.staff = make_staff("not_taken_teacher@example.com", self.course)
+        self.taken_subject = Subject.objects.create(name="Marked Subject", staff=self.staff, course=self.course)
+        self.not_taken_subject = Subject.objects.create(name="Unmarked Subject", staff=self.staff, course=self.course)
+        Attendance.objects.create(session=self.session, subject=self.taken_subject, date=datetime.date(2024, 6, 15))
+
+    def test_lists_only_the_subject_without_attendance(self):
+        response = self.client.get(reverse('report_attendance_not_taken'), {'date': '2024-06-15'})
+        self.assertEqual(response.status_code, 200)
+        subjects = [row['subject'] for row in response.context['not_taken']]
+        self.assertIn('Unmarked Subject', subjects)
+        self.assertNotIn('Marked Subject', subjects)
+
+    def test_different_date_shows_both_subjects_as_not_taken(self):
+        response = self.client.get(reverse('report_attendance_not_taken'), {'date': '2024-06-16'})
+        subjects = [row['subject'] for row in response.context['not_taken']]
+        self.assertIn('Marked Subject', subjects)
+        self.assertIn('Unmarked Subject', subjects)
+
+    def test_course_filter_scopes_results(self):
+        other_course = make_course("Other Not Taken Course")
+        other_staff = make_staff("other_not_taken_teacher@example.com", other_course)
+        Subject.objects.create(name="Other Course Subject", staff=other_staff, course=other_course)
+
+        response = self.client.get(reverse('report_attendance_not_taken'), {
+            'date': '2024-06-16', 'course': self.course.id,
+        })
+        subjects = [row['subject'] for row in response.context['not_taken']]
+        self.assertNotIn('Other Course Subject', subjects)
+
+    def test_teacher_name_included(self):
+        response = self.client.get(reverse('report_attendance_not_taken'), {'date': '2024-06-15'})
+        row = next(r for r in response.context['not_taken'] if r['subject'] == 'Unmarked Subject')
+        self.assertEqual(row['teacher'], str(self.staff))
+        self.assertEqual(row['course'], 'Not Taken Course')
+
+    def test_csv_export(self):
+        response = self.client.get(reverse('report_attendance_not_taken_csv'), {'date': '2024-06-15'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        body = response.content.decode()
+        self.assertIn('Unmarked Subject', body)
+        self.assertNotIn('Marked Subject', body)
+
+    def test_staff_cannot_reach_it(self):
+        self.client.logout()
+        self.client.login(username="not_taken_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('report_attendance_not_taken'))
+        self.assertRedirects(response, reverse('staff_home'))
+
+
 class StudentAttendanceReportTests(TestCase):
     def setUp(self):
         make_admin("report_admin_student@example.com")

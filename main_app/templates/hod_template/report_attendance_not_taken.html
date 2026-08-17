@@ -1,0 +1,67 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" class="form-inline">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Date</label>
+                                <input type="date" name="date" class="form-control" value="{{ selected_date }}">
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Class</label>
+                                <select name="course" class="form-control">
+                                    <option value="">All Classes</option>
+                                    {% for course in courses %}
+                                    <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary mr-2">Filter</button>
+                            <a class="btn btn-outline-secondary"
+                               href="{% url 'report_attendance_not_taken_csv' %}?date={{ selected_date }}&course={{ selected_course }}">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Subjects with no attendance recorded on {{ selected_date }}</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Class</th><th>Subject</th><th>Teacher</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in not_taken %}
+                                    <tr>
+                                        <td>{{ row.course }}</td>
+                                        <td>{{ row.subject }}</td>
+                                        <td>{{ row.teacher }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="3" class="text-muted">Attendance has been taken for every subject on {{ selected_date }}{% if selected_course %} in this class{% endif %}.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
