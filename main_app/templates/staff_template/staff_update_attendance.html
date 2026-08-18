@@ -201,7 +201,7 @@ if (attendance_date.length  == 0){
                         var checked_attr = json_data[key]['status'] ? "checked='checked'" : ""
                         var disabled_attr = on_leave ? "disabled='disabled'" : ""
                         var status_label = on_leave ? " <span class='badge badge-warning'>On Leave</span>" : (json_data[key]['status'] ? " [Present] " : " [Absent] ")
-                        div_data += "<div class='col-lg-3'><div class='form-check custom-control custom-checkbox'><input type='checkbox' class='custom-control-input' " + checked_attr + " " + disabled_attr + " name='student_data[]' value=" + json_data[key]['id'] + " id='checkbox" + json_data[key]['id'] + "' /> <label for='checkbox" + json_data[key]['id'] + "' class='custom-control-label'>" + json_data[key]['name']  + status_label + "</label></div> </div>"
+                        div_data += "<div class='col-lg-3'><div class='form-check custom-control custom-checkbox'><input type='checkbox' class='custom-control-input' " + checked_attr + " " + disabled_attr + " name='student_data[]' value=" + json_data[key]['id'] + " id='checkbox" + json_data[key]['id'] + "' /> <label for='checkbox" + json_data[key]['id'] + "' class='custom-control-label'>" + escapeHtml(json_data[key]['name'])  + status_label + "</label></div> </div>"
                     }
                     div_data += "</div></div>"
                     div_data += "<div class='form-group'><button id='save_attendance' class='btn btn-success' type='button'>Save Attendance</button></div>"

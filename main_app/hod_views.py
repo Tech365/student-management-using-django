@@ -1191,9 +1191,9 @@ def get_admin_attendance(request):
             status = "On Leave" if student.id in on_leave_ids else str(bool(report.status)) if report else "Not Recorded"
             json_data.append({"status": status, "name": str(student)})
         return JsonResponse(json.dumps(json_data), safe=False)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to fetch admin attendance")
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'error': 'Could not fetch attendance.'}, status=400)
 
 
 def admin_view_profile(request):

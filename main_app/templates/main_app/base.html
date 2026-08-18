@@ -255,6 +255,22 @@
             (toastr[type] || toastr.info)(message);
         }
 
+        // Several class-roster screens (Take Attendance, results entry, ...)
+        // build their markup with string concatenation + .html() instead of
+        // Django's auto-escaping template rendering, because the data comes
+        // from an AJAX/JSON call rather than the initial page render. Any
+        // value from that response - a student's name, most often - has to
+        // go through this before landing in an HTML string, or it can inject
+        // markup/script into whoever's viewing the roster.
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         var _confirmModalCallback = null;
         function confirmAction(message, onConfirm) {
             $('#sharedConfirmModal .modal-body').text(message);

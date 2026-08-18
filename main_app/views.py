@@ -48,6 +48,10 @@ def doLogin(request, **kwargs):
                 return redirect(role_home_url(roles[0][0]))
             return redirect(reverse("choose_role"))
         else:
+            # Failed attempts are logged via the user_login_failed signal
+            # (see main_app/signals.py) rather than here, so the same
+            # logging covers Django's own /admin/login/ too, not just this
+            # view.
             messages.error(request, "Invalid details")
             return redirect("/")
 
@@ -107,9 +111,9 @@ def get_attendance(request):
                     }
             attendance_list.append(data)
         return JsonResponse(json.dumps(attendance_list), safe=False)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to fetch attendance")
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'error': 'Could not fetch attendance.'}, status=400)
 
 
 def showFirebaseJS(request):

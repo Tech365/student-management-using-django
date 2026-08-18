@@ -70,16 +70,21 @@ def student_view_attendance(request):
         start = request.POST.get('start_date')
         end = request.POST.get('end_date')
         try:
-            subject = get_object_or_404(Subject, id=subject_id)
+            # Scoped to the student's own class - matches the scoping
+            # convention used everywhere else (see staff_views.py). Not
+            # currently reachable another way since attendance_with_leave_json
+            # always re-filters by this exact student, but that shouldn't be
+            # the only thing standing between this and another class's data.
+            subject = get_object_or_404(Subject, id=subject_id, course=student.course)
             start_date = datetime.strptime(start, "%Y-%m-%d")
             end_date = datetime.strptime(end, "%Y-%m-%d")
             attendance = Attendance.objects.filter(
                 date__range=(start_date, end_date), subject=subject)
             json_data = attendance_with_leave_json(student, attendance)
             return JsonResponse(json.dumps(json_data), safe=False)
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to fetch student attendance")
-            return JsonResponse({'error': str(e)}, status=400)
+            return JsonResponse({'error': 'Could not fetch attendance.'}, status=400)
 
 
 def student_apply_leave(request):

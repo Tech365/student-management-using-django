@@ -2101,7 +2101,10 @@ class ParentNotificationTests(TestCase):
         self.course = make_course("Notif Course")
         self.session = make_session()
         self.student = make_student("notif_kid@example.com", self.course, self.session)
-        self.client.login(username="notif_admin@example.com", password=PASSWORD)
+        # parent_register is public self-service - now that the middleware
+        # blocks Admin from main_app.parent_views entirely (closing the
+        # asymmetry the pentest flagged), this has to be posted anonymously,
+        # same as a real parent would.
         self.client.post(reverse('parent_register'), {
             'first_name': 'Notif', 'last_name': 'Parent', 'email': 'notif_parent@example.com',
             'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
@@ -2110,7 +2113,6 @@ class ParentNotificationTests(TestCase):
             'child-0-course': self.course.id, 'child-0-student': self.student.id,
             'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
         })
-        self.client.logout()
         self.parent = Parent.objects.get(admin__email='notif_parent@example.com')
         self.link = ParentStudentLink.objects.get(parent=self.parent, student=self.student)
 
@@ -2273,7 +2275,9 @@ class SecurityHardeningTests(TestCase):
     def test_editing_parent_without_a_new_photo_does_not_crash(self):
         """Regression: clean_profile_pic crashed on the existing-photo-URL
         string Django substitutes in when no new file is uploaded on edit."""
-        self.client.login(username="hardening_admin@example.com", password=PASSWORD)
+        # parent_register is public self-service and the middleware now
+        # blocks Admin from main_app.parent_views entirely, so this has
+        # to be posted anonymously before logging in as admin to edit it.
         self.client.post(reverse('parent_register'), {
             'first_name': 'Photo', 'last_name': 'Parent', 'email': 'photo_parent@example.com',
             'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
@@ -2283,6 +2287,7 @@ class SecurityHardeningTests(TestCase):
             'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
         })
         parent = Parent.objects.get(admin__email='photo_parent@example.com')
+        self.client.login(username="hardening_admin@example.com", password=PASSWORD)
         response = self.client.post(reverse('edit_parent', args=[parent.id]), {
             'first_name': 'Photo', 'last_name': 'Parent', 'email': 'photo_parent@example.com',
             'gender': 'M', 'address': 'addr', 'contact_number': '555',
@@ -2322,6 +2327,10 @@ class UXImprovementTests(TestCase):
     def test_contested_link_requests_are_flagged(self):
         # Two different parents both request the same student - the admin
         # should see this flagged, not have to notice it by eye.
+        # parent_register is public self-service and the middleware now
+        # blocks Admin from main_app.parent_views entirely, so setUp's
+        # admin session has to step aside for these two anonymous posts.
+        self.client.logout()
         self.client.post(reverse('parent_register'), {
             'first_name': 'A', 'last_name': 'Parent', 'email': 'contested_a@example.com',
             'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
@@ -2338,10 +2347,12 @@ class UXImprovementTests(TestCase):
             'child-0-course': self.course.id, 'child-0-student': self.student.id,
             'child-0-relationship': 'mother', 'child-0-date_of_birth': '2015-06-01',
         })
+        self.client.login(username="ux_admin@example.com", password=PASSWORD)
         response = self.client.get(reverse('view_parent_link_requests'))
         self.assertContains(response, 'Also requested by another parent')
 
     def test_uncontested_link_request_is_not_flagged(self):
+        self.client.logout()
         self.client.post(reverse('parent_register'), {
             'first_name': 'Solo', 'last_name': 'Parent', 'email': 'solo_parent@example.com',
             'gender': 'M', 'address': 'addr', 'password': PASSWORD, 'contact_number': '555',
@@ -2350,6 +2361,7 @@ class UXImprovementTests(TestCase):
             'child-0-course': self.course.id, 'child-0-student': self.student.id,
             'child-0-relationship': 'father', 'child-0-date_of_birth': '2015-01-01',
         })
+        self.client.login(username="ux_admin@example.com", password=PASSWORD)
         response = self.client.get(reverse('view_parent_link_requests'))
         self.assertNotContains(response, 'Also requested by another parent')
         self.assertFalse(NotificationParent.objects.exists())
@@ -2972,3 +2984,224 @@ class AvatarUrlFilterTests(TestCase):
         from main_app.templatetags.main_app_extras import avatar_url
         self.assertEqual(avatar_url('dist/img/default-150x150.png'),
                           '/static/dist/img/default-150x150.png')
+
+
+class NameXssValidationTests(TestCase):
+    """CustomUserForm.clean_first_name/clean_last_name - names are
+    rendered unescaped into hand-built HTML on a few class-roster pages
+    (staff_take_attendance.html and others build their roster via string
+    concatenation + jQuery .html() instead of Django's auto-escaping
+    template rendering, since the data arrives over AJAX), so '<'/'>' in
+    a name has to be rejected at the point it's saved."""
+
+    def _form_data(self, first_name, last_name='Staff'):
+        return {
+            'first_name': first_name, 'last_name': last_name,
+            'email': 'xss_form_test@example.com', 'gender': 'M',
+            'password': PASSWORD, 'address': 'test address',
+        }
+
+    def test_rejects_angle_brackets_in_first_name(self):
+        form = StaffForm(data=self._form_data('<img src=x onerror=alert(1)>'),
+                          files={'profile_pic': make_image_file()})
+        self.assertFalse(form.is_valid())
+        self.assertIn('first_name', form.errors)
+
+    def test_rejects_angle_brackets_in_last_name(self):
+        form = StaffForm(data=self._form_data('Test', '</b><script>alert(1)</script>'),
+                          files={'profile_pic': make_image_file()})
+        self.assertFalse(form.is_valid())
+        self.assertIn('last_name', form.errors)
+
+    def test_accepts_ordinary_names_with_punctuation(self):
+        form = StaffForm(data=self._form_data("Jean-Pierre", "O'Brien"),
+                          files={'profile_pic': make_image_file()})
+        self.assertNotIn('first_name', form.errors)
+        self.assertNotIn('last_name', form.errors)
+
+    def test_self_service_profile_edit_also_rejects_it(self):
+        # The actual path the report's reproduction used: a student
+        # editing their own name via the normal profile form, not an
+        # admin-side form.
+        course = make_course("XSS Form Course")
+        session = make_session()
+        student = make_student("xss_form_student@example.com", course, session)
+        client = Client()
+        client.login(username="xss_form_student@example.com", password=PASSWORD)
+        client.post(reverse('student_view_profile'), {
+            'first_name': '<img src=x onerror=alert(1)>', 'last_name': 'Student',
+            'email': 'xss_form_student@example.com', 'gender': 'M', 'address': 'test',
+        })
+        student.admin.refresh_from_db()
+        self.assertNotIn('<img', student.admin.first_name)
+
+
+class ParentViewsMiddlewareBoundaryTests(TestCase):
+    """LoginCheckMiddleWare used to block Admin/Staff/Student from
+    student_views/staff_views/hod_views but never from parent_views -
+    every individual parent_views function happens to re-check
+    Parent.objects.get(admin=request.user) so this wasn't independently
+    exploitable, but the module boundary itself should still be
+    symmetric like every other role pairing."""
+
+    def setUp(self):
+        self.course = make_course("Middleware Boundary Course")
+        self.session = make_session()
+
+    def _login_as(self, email, role):
+        client = Client()
+        client.login(username=email, password=PASSWORD)
+        s = client.session
+        s['active_role'] = role
+        s.save()
+        return client
+
+    def test_admin_redirected_away_from_parent_views(self):
+        make_admin("mw_admin@example.com")
+        client = self._login_as("mw_admin@example.com", '1')
+        response = client.get(reverse('parent_home'))
+        self.assertRedirects(response, reverse('admin_home'))
+
+    def test_staff_redirected_away_from_parent_views(self):
+        make_staff("mw_staff@example.com", self.course)
+        client = self._login_as("mw_staff@example.com", '2')
+        response = client.get(reverse('parent_home'))
+        self.assertRedirects(response, reverse('staff_home'))
+
+    def test_student_redirected_away_from_parent_views(self):
+        make_student("mw_student@example.com", self.course, self.session)
+        client = self._login_as("mw_student@example.com", '3')
+        response = client.get(reverse('parent_home'))
+        self.assertRedirects(response, reverse('student_home'))
+
+    def test_parent_can_still_reach_parent_views(self):
+        admin = make_staff("mw_parent_base@example.com", self.course).admin
+        grant_role(admin, '4', contact_number='5551234')
+        client = self._login_as("mw_parent_base@example.com", '4')
+        response = client.get(reverse('parent_home'))
+        self.assertEqual(response.status_code, 200)
+
+
+class AdminLoginRateLimitTests(TestCase):
+    """/admin/login/ authenticates against the same user database as the
+    app's own login but didn't go through its rate limiting - reachable
+    by any authenticated non-admin account (e.g. a self-registered
+    parent), not just anonymous visitors."""
+
+    def setUp(self):
+        cache.clear()
+        make_admin("ratelimit_target_admin@example.com")
+        self.course = make_course("Rate Limit Course")
+        make_student("ratelimit_attacker@example.com", self.course, make_session())
+        self.client.login(username="ratelimit_attacker@example.com", password=PASSWORD)
+        s = self.client.session
+        s['active_role'] = '3'
+        s.save()
+
+    def test_admin_login_is_rate_limited(self):
+        for _ in range(10):
+            response = self.client.post(reverse('admin:login'), {
+                'username': 'ratelimit_target_admin@example.com', 'password': 'wrongguess',
+            })
+            self.assertEqual(response.status_code, 200)
+        blocked = self.client.post(reverse('admin:login'), {
+            'username': 'ratelimit_target_admin@example.com', 'password': 'wrongguess',
+        })
+        self.assertEqual(blocked.status_code, 429)
+
+
+class AttendanceSubjectScopingTests(TestCase):
+    """student_view_attendance/parent_view_attendance previously fetched
+    Subject by id with no check that it belonged to the requester's own
+    course - not exploitable (attendance_with_leave_json always re-filters
+    by student=), but should still reject the request outright rather
+    than silently return an empty result for a subject that was never in
+    scope. Both views wrap the lookup in a broad try/except that turns
+    the Http404 from get_object_or_404 into a 400 JSON error response
+    rather than letting it surface as a real 404 - that's pre-existing
+    behavior this fix doesn't change, so 400 (not 404) is what "correctly
+    rejected" looks like here."""
+
+    def setUp(self):
+        self.own_course = make_course("Scoping Own Course")
+        self.other_course = make_course("Scoping Other Course")
+        self.session = make_session()
+        staff = make_staff("scoping_teacher@example.com", self.other_course)
+        self.other_subject = make_subject("Other Course Subject", staff, self.other_course)
+
+    def test_student_cannot_fetch_another_courses_subject(self):
+        make_student("scoping_student@example.com", self.own_course, self.session)
+        client = Client()
+        client.login(username="scoping_student@example.com", password=PASSWORD)
+        response = client.post(reverse('student_view_attendance'), {
+            'subject': self.other_subject.id, 'start_date': '2024-01-01', 'end_date': '2024-12-31',
+        })
+        self.assertEqual(response.status_code, 400)
+
+    def test_parent_cannot_fetch_another_courses_subject_for_their_child(self):
+        student = make_student("scoping_child@example.com", self.own_course, self.session)
+        parent_admin = make_staff("scoping_parent@example.com", self.own_course).admin
+        grant_role(parent_admin, '4', contact_number='5551234')
+        parent = parent_admin.parent
+        ParentStudentLink.objects.create(
+            parent=parent, student=student, relationship='Father',
+            date_of_birth='2010-01-01', status=1)
+        client = Client()
+        client.login(username="scoping_parent@example.com", password=PASSWORD)
+        s = client.session
+        s['active_role'] = '4'
+        s.save()
+        response = client.post(reverse('parent_view_attendance'), {
+            'student': student.id, 'subject': self.other_subject.id,
+            'start_date': '2024-01-01', 'end_date': '2024-12-31',
+        })
+        self.assertEqual(response.status_code, 400)
+
+
+class FailedLoginLoggingTests(TestCase):
+    """main_app.signals.log_failed_login - a failed authenticate() call
+    used to leave no trace anywhere (rate_limited() blunts brute-forcing
+    but doesn't log what was attempted), for either the app's own login
+    or Django's built-in /admin/login/, since both call authenticate()."""
+
+    def setUp(self):
+        # Otherwise a prior test class's admin_login rate-limit bucket
+        # (same cache, keyed by the test client's IP) can still be tripped
+        # here, short-circuiting the POST with 429 before authenticate()
+        # ever runs - so the signal never fires and the log never happens.
+        cache.clear()
+
+    def test_failed_app_login_is_logged(self):
+        with self.assertLogs('main_app.signals', level='WARNING') as cm:
+            self.client.post(reverse('user_login'), {
+                'email': 'nobody_here@example.com', 'password': 'wrong',
+            })
+        self.assertTrue(any('nobody_here@example.com' in message for message in cm.output))
+
+    def test_failed_admin_login_is_logged(self):
+        # An anonymous request never reaches Django's admin login view at
+        # all - LoginCheckMiddleWare redirects it to the app's own login
+        # page first - so this has to go through as an authenticated
+        # non-admin account, same as AdminLoginRateLimitTests.
+        make_admin("logging_target_admin@example.com")
+        course = make_course("Failed Login Logging Course")
+        make_student("logging_attacker@example.com", course, make_session())
+        self.client.login(username="logging_attacker@example.com", password=PASSWORD)
+        s = self.client.session
+        s['active_role'] = '3'
+        s.save()
+        with self.assertLogs('main_app.signals', level='WARNING') as cm:
+            self.client.post(reverse('admin:login'), {
+                'username': 'logging_target_admin@example.com', 'password': 'wrong',
+            })
+        self.assertTrue(any('logging_target_admin@example.com' in message for message in cm.output))
+
+    def test_successful_login_is_not_logged_as_failed(self):
+        from unittest.mock import patch
+        make_admin("logging_success_admin@example.com")
+        with patch('main_app.signals.logger.warning') as mock_warning:
+            response = self.client.post(reverse('user_login'), {
+                'email': 'logging_success_admin@example.com', 'password': PASSWORD,
+            })
+        self.assertEqual(response.status_code, 302)
+        mock_warning.assert_not_called()

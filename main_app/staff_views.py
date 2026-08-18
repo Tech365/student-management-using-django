@@ -129,9 +129,9 @@ def get_students(request):
             "taken_by": str(existing_attendance.taken_by) if existing_attendance and existing_attendance.taken_by else None,
         }
         return JsonResponse(json.dumps(payload), content_type='application/json', safe=False)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to fetch students")
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'error': 'Could not fetch students.'}, status=400)
 
 
 def save_attendance(request):
@@ -228,9 +228,9 @@ def get_student_attendance(request):
             }
             student_data.append(data)
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to fetch student attendance")
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'error': 'Could not fetch attendance.'}, status=400)
 
 
 def update_attendance(request):

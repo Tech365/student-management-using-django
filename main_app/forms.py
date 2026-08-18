@@ -63,6 +63,27 @@ class CustomUserForm(FormSettings):
             validate_password(password)
         return password
 
+    def _clean_name_field(self, field_name):
+        # Names are rendered unescaped into hand-built HTML strings on a
+        # few class-roster pages (Take Attendance, results entry, ...),
+        # which are built with string concatenation + jQuery .html()
+        # rather than Django's auto-escaping template rendering. A name
+        # containing '<' or '>' would be stored verbatim and could inject
+        # markup/script into whichever staff/admin later views that
+        # roster. Reject it here - legitimate names essentially never
+        # contain these characters, unlike letters, spaces, hyphens,
+        # apostrophes, or accents, all of which stay allowed.
+        value = self.cleaned_data.get(field_name)
+        if value and ('<' in value or '>' in value):
+            raise forms.ValidationError("Names can't contain '<' or '>'.")
+        return value
+
+    def clean_first_name(self):
+        return self._clean_name_field('first_name')
+
+    def clean_last_name(self):
+        return self._clean_name_field('last_name')
+
     def clean_profile_pic(self):
         # ImageField already verifies the content is a genuine image
         # (Pillow-backed), but the saved filename's extension is taken

@@ -104,9 +104,9 @@ def get_students_for_registration(request):
             for student in students
         ]
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to fetch students for parent registration")
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'error': 'Could not fetch students.'}, status=400)
 
 
 def parent_view_notification(request):
@@ -236,15 +236,17 @@ def parent_view_attendance(request):
         if student is None:
             return JsonResponse({'error': 'Not authorized for this student'}, status=404)
         try:
-            subject = get_object_or_404(Subject, id=subject_id)
+            # Scoped to the child's own class, same reasoning as
+            # student_views.student_view_attendance.
+            subject = get_object_or_404(Subject, id=subject_id, course=student.course)
             start_date = datetime.strptime(start, "%Y-%m-%d")
             end_date = datetime.strptime(end, "%Y-%m-%d")
             attendance = Attendance.objects.filter(date__range=(start_date, end_date), subject=subject)
             json_data = attendance_with_leave_json(student, attendance)
             return JsonResponse(json.dumps(json_data), safe=False)
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to fetch parent-viewed attendance")
-            return JsonResponse({'error': str(e)}, status=400)
+            return JsonResponse({'error': 'Could not fetch attendance.'}, status=400)
 
 
 def parent_apply_leave(request):
