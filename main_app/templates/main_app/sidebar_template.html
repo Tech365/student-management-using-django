@@ -104,6 +104,13 @@
                         <p>Grant Parent Role</p>
                     </a>
                 </li>
+                <li class="nav-item">
+                    {% url 'view_parent_link_requests' as view_parent_link_requests %}
+                    <a href="{{view_parent_link_requests}}" class="nav-link {% if view_parent_link_requests == request.path %} active {% endif %}">
+                        <i data-lucide="user-check" class="nav-icon text-primary"></i>
+                        <p>Parent Link Requests</p>
+                    </a>
+                </li>
 
                 <li class="nav-header">ACADEMICS</li>
                 <li class="nav-item">
@@ -154,6 +161,13 @@
                         <p>Manage Session</p>
                     </a>
                 </li>
+                <li class="nav-item">
+                    {% url 'report_results' as report_results %}
+                    <a href="{{report_results}}" class="nav-link {% if report_results == request.path %} active {% endif %}">
+                        <i data-lucide="chart-pie" class="nav-icon text-warning"></i>
+                        <p>Results Report</p>
+                    </a>
+                </li>
 
                 <li class="nav-header">ATTENDANCE</li>
                 <li class="nav-item">
@@ -161,6 +175,27 @@
                     <a href="{{admin_view_attendance}}" class="nav-link {% if admin_view_attendance == request.path %} active {% endif %}">
                         <i data-lucide="clipboard-check" class="nav-icon text-success"></i>
                         <p>View Attendance</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'report_attendance_summary' as report_attendance_summary %}
+                    <a href="{{report_attendance_summary}}" class="nav-link {% if report_attendance_summary == request.path %} active {% endif %}">
+                        <i data-lucide="chart-bar" class="nav-icon text-success"></i>
+                        <p>Attendance Summary</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'report_attendance_not_taken' as report_attendance_not_taken %}
+                    <a href="{{report_attendance_not_taken}}" class="nav-link {% if report_attendance_not_taken == request.path %} active {% endif %}">
+                        <i data-lucide="triangle-alert" class="nav-icon text-success"></i>
+                        <p>Attendance Not Taken</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'report_student_attendance' as report_student_attendance %}
+                    <a href="{{report_student_attendance}}" class="nav-link {% if report_student_attendance == request.path %} active {% endif %}">
+                        <i data-lucide="chart-line" class="nav-icon text-success"></i>
+                        <p>Student Attendance</p>
                     </a>
                 </li>
 
@@ -180,6 +215,13 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    {% url 'report_leave' as report_leave %}
+                    <a href="{{report_leave}}" class="nav-link {% if report_leave == request.path %} active {% endif %}">
+                        <i data-lucide="file-text" class="nav-icon text-purple"></i>
+                        <p>Leave Report</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     {% url 'staff_feedback_message' as staff_feedback_message %}
                     <a href="{{staff_feedback_message}}" class="nav-link {% if staff_feedback_message == request.path %} active {% endif %}">
                         <i data-lucide="message-circle-more" class="nav-icon text-pink"></i>
@@ -191,13 +233,6 @@
                     <a href="{{ student_feedback_message }}" class="nav-link {% if student_feedback_message == request.path %} active {% endif %}">
                         <i data-lucide="message-circle-more" class="nav-icon text-pink"></i>
                         <p>Student Feedback</p>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    {% url 'view_parent_link_requests' as view_parent_link_requests %}
-                    <a href="{{view_parent_link_requests}}" class="nav-link {% if view_parent_link_requests == request.path %} active {% endif %}">
-                        <i data-lucide="users" class="nav-icon text-purple"></i>
-                        <p>Parent Link Requests</p>
                     </a>
                 </li>
 
@@ -224,42 +259,7 @@
                     </a>
                 </li>
 
-                <li class="nav-header">REPORTS</li>
-                <li class="nav-item">
-                    {% url 'report_attendance_summary' as report_attendance_summary %}
-                    <a href="{{report_attendance_summary}}" class="nav-link {% if report_attendance_summary == request.path %} active {% endif %}">
-                        <i data-lucide="chart-bar" class="nav-icon text-teal"></i>
-                        <p>Attendance Summary</p>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    {% url 'report_attendance_not_taken' as report_attendance_not_taken %}
-                    <a href="{{report_attendance_not_taken}}" class="nav-link {% if report_attendance_not_taken == request.path %} active {% endif %}">
-                        <i data-lucide="triangle-alert" class="nav-icon text-teal"></i>
-                        <p>Attendance Not Taken</p>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    {% url 'report_student_attendance' as report_student_attendance %}
-                    <a href="{{report_student_attendance}}" class="nav-link {% if report_student_attendance == request.path %} active {% endif %}">
-                        <i data-lucide="chart-line" class="nav-icon text-teal"></i>
-                        <p>Student Attendance</p>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    {% url 'report_leave' as report_leave %}
-                    <a href="{{report_leave}}" class="nav-link {% if report_leave == request.path %} active {% endif %}">
-                        <i data-lucide="file-text" class="nav-icon text-teal"></i>
-                        <p>Leave Report</p>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    {% url 'report_results' as report_results %}
-                    <a href="{{report_results}}" class="nav-link {% if report_results == request.path %} active {% endif %}">
-                        <i data-lucide="chart-pie" class="nav-icon text-teal"></i>
-                        <p>Results Report</p>
-                    </a>
-                </li>
+                <li class="nav-header">SYSTEM</li>
                 <li class="nav-item">
                     {% url 'report_activity_log' as report_activity_log %}
                     <a href="{{report_activity_log}}" class="nav-link {% if report_activity_log == request.path %} active {% endif %}">
@@ -350,19 +350,7 @@
                     </a>
                 </li>
 
-                <li class="nav-header">COMMUNICATION</li>
-                <li class="nav-item">
-                    {% url 'staff_view_notification' as staff_view_notification %}
-                    <a href="{{staff_view_notification}}" class="nav-link {% if staff_view_notification == request.path %} active {% endif %}">
-                        <i data-lucide="bell" class="nav-icon text-danger"></i>
-                        <p>
-                            View Notifications
-                            {% if unread_notification_count %}
-                            <span class="right badge badge-danger">{{ unread_notification_count }}</span>
-                            {% endif %}
-                        </p>
-                    </a>
-                </li>
+                <li class="nav-header">LEAVE &amp; FEEDBACK</li>
                 <li class="nav-item">
                     {% url 'staff_apply_leave' as staff_apply_leave %}
                     <a href="{{staff_apply_leave}}" class="nav-link {% if staff_apply_leave == request.path %} active {% endif %}">
@@ -375,6 +363,20 @@
                     <a href="{{staff_feedback}}" class="nav-link {% if staff_feedback == request.path %} active {% endif %}">
                         <i data-lucide="message-circle-more" class="nav-icon text-pink"></i>
                         <p>Feedback</p>
+                    </a>
+                </li>
+
+                <li class="nav-header">NOTIFICATIONS</li>
+                <li class="nav-item">
+                    {% url 'staff_view_notification' as staff_view_notification %}
+                    <a href="{{staff_view_notification}}" class="nav-link {% if staff_view_notification == request.path %} active {% endif %}">
+                        <i data-lucide="bell" class="nav-icon text-danger"></i>
+                        <p>
+                            View Notifications
+                            {% if unread_notification_count %}
+                            <span class="right badge badge-danger">{{ unread_notification_count }}</span>
+                            {% endif %}
+                        </p>
                     </a>
                 </li>
 
@@ -427,6 +429,8 @@
                         <p>View Results</p>
                     </a>
                 </li>
+
+                <li class="nav-header">ATTENDANCE</li>
                 <li class="nav-item">
                     {% url 'student_view_attendance' as student_view_attendance %}
                     <a href="{{student_view_attendance}}" class="nav-link {% if student_view_attendance == request.path %} active {% endif %}">
@@ -435,19 +439,7 @@
                     </a>
                 </li>
 
-                <li class="nav-header">COMMUNICATION</li>
-                <li class="nav-item">
-                    {% url 'student_view_notification' as student_view_notification %}
-                    <a href="{{student_view_notification}}" class="nav-link {% if student_view_notification == request.path %} active {% endif %}">
-                        <i data-lucide="bell" class="nav-icon text-danger"></i>
-                        <p>
-                            View Notifications
-                            {% if unread_notification_count %}
-                            <span class="right badge badge-danger">{{ unread_notification_count }}</span>
-                            {% endif %}
-                        </p>
-                    </a>
-                </li>
+                <li class="nav-header">LEAVE &amp; FEEDBACK</li>
                 <li class="nav-item">
                     {% url 'student_apply_leave' as student_apply_leave %}
                     <a href="{{student_apply_leave}}" class="nav-link {% if student_apply_leave == request.path %} active {% endif %}">
@@ -460,6 +452,20 @@
                     <a href="{{student_feedback}}" class="nav-link {% if student_feedback == request.path %} active {% endif %}">
                         <i data-lucide="message-circle-more" class="nav-icon text-pink"></i>
                         <p>Feedback</p>
+                    </a>
+                </li>
+
+                <li class="nav-header">NOTIFICATIONS</li>
+                <li class="nav-item">
+                    {% url 'student_view_notification' as student_view_notification %}
+                    <a href="{{student_view_notification}}" class="nav-link {% if student_view_notification == request.path %} active {% endif %}">
+                        <i data-lucide="bell" class="nav-icon text-danger"></i>
+                        <p>
+                            View Notifications
+                            {% if unread_notification_count %}
+                            <span class="right badge badge-danger">{{ unread_notification_count }}</span>
+                            {% endif %}
+                        </p>
                     </a>
                 </li>
 
@@ -527,7 +533,7 @@
                     </a>
                 </li>
 
-                <li class="nav-header">COMMUNICATION</li>
+                <li class="nav-header">NOTIFICATIONS</li>
                 <li class="nav-item">
                     {% url 'parent_view_notification' as parent_view_notification %}
                     <a href="{{parent_view_notification}}" class="nav-link {% if parent_view_notification == request.path %} active {% endif %}">
