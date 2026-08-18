@@ -37,30 +37,16 @@
     <!-- Toastr -->
     <link rel="stylesheet" href="{% static 'plugins/toastr/toastr.min.css' %}">
     {% include "includes/pwa_meta.html" %}
+    <!-- Apple-inspired reskin (pilot: login + Admin chrome) - see the file's
+         own header comment for scope/rationale. Loaded last so its rules
+         win the cascade over AdminLTE/plugin defaults without !important
+         everywhere. -->
+    <link rel="stylesheet" href="{% static 'dist/css/apple-theme.css' %}">
     <style>
-        /* Madrasa Jamaliyah brand accent - the school's own blue, not AdminLTE's default */
-        :root { --brand-blue: #014AA9; }
-        .main-sidebar .brand-link { border-bottom-color: rgba(255,255,255,.15); }
-        .nav-sidebar > .nav-item > .nav-link.active,
-        .nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
-            background-color: var(--brand-blue);
-        }
-        .btn-primary, .page-item.active .page-link {
-            background-color: var(--brand-blue);
-            border-color: var(--brand-blue);
-        }
-        .btn-primary:hover, .btn-primary:focus {
-            background-color: #013a85;
-            border-color: #013a85;
-        }
         .navbar-brand-logo {
             height: 32px;
             width: auto;
             margin-right: 8px;
-        }
-        .navbar-brand-text {
-            font-weight: 600;
-            color: var(--brand-blue);
         }
     </style>
     {% block custom_css %}

@@ -1,0 +1,425 @@
+/*
+ * Apple-inspired reskin - Phase 1 pilot (login page + Admin dashboard/chrome).
+ *
+ * This is a CSS-only overlay loaded after adminlte.min.css and every plugin
+ * stylesheet - it never touches template markup or app logic, only how the
+ * existing AdminLTE/Bootstrap 4 components look. That's a deliberate scope
+ * choice: reskin, not rebuild (see the SaaS Readiness Audit's UI section).
+ *
+ * Design tokens follow Apple's Human Interface Guidelines vocabulary:
+ * a neutral, restrained palette; one accent color used sparingly; the
+ * system font stack (resolves to San Francisco on Apple devices, and to
+ * each platform's own native UI font everywhere else - never a webfont
+ * masquerading as SF, which Apple's own licensing doesn't allow off-device
+ * anyway); generous spacing; soft, barely-there elevation instead of hard
+ * borders and drop shadows.
+ */
+
+:root {
+    --canvas: #F5F5F7;
+    --surface: #FFFFFF;
+    --surface-sunken: #FAFAFA;
+    --ink: #1D1D1F;
+    --ink-secondary: #6E6E73;
+    --ink-tertiary: #86868B;
+    --hairline: #D2D2D7;
+    --hairline-soft: #E5E5E7;
+
+    --accent: #0071E3;
+    --accent-hover: #0077ED;
+    --accent-active: #0060C6;
+    --accent-tint: #E8F1FC;
+
+    --good: #1F8A46;
+    --good-tint: #E6F6EC;
+    --warn: #B25E00;
+    --warn-tint: #FBEEDD;
+    --bad: #D70015;
+    --bad-tint: #FCE7E9;
+    --neutral-badge: #6E6E73;
+    --neutral-tint: #F0F0F2;
+
+    --radius-lg: 16px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+    --radius-xs: 6px;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.06);
+    --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.10);
+
+    --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+        "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* ---------------------------------------------------------------------- */
+/* Foundations                                                             */
+/* ---------------------------------------------------------------------- */
+
+body,
+.login-page,
+.hold-transition {
+    font-family: var(--font-system) !important;
+    background-color: var(--canvas) !important;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+}
+
+.content-wrapper {
+    background-color: var(--canvas) !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-system);
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+}
+
+.content-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+a { color: var(--accent); }
+a:hover { color: var(--accent-active); }
+
+:focus-visible {
+    outline: 3px solid rgba(0, 113, 227, 0.35);
+    outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Top navbar                                                              */
+/* ---------------------------------------------------------------------- */
+
+.main-header.navbar {
+    background: var(--surface) !important;
+    border-bottom: 1px solid var(--hairline-soft) !important;
+    box-shadow: none !important;
+}
+
+.main-header .nav-link {
+    color: var(--ink-secondary) !important;
+}
+
+.main-header input[type="search"],
+.main-header .form-control {
+    background: var(--surface-sunken);
+    border: 1px solid var(--hairline-soft);
+    border-radius: 999px !important;
+    padding-left: 16px;
+}
+
+.navbar-brand-text {
+    color: var(--ink) !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.01em;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Sidebar - light, airy, one neutral icon tone, soft selected pill        */
+/* ---------------------------------------------------------------------- */
+
+.main-sidebar {
+    background: var(--surface-sunken) !important;
+    border-right: 1px solid var(--hairline-soft);
+    box-shadow: none !important;
+}
+
+.main-sidebar .brand-link {
+    border-bottom: 1px solid var(--hairline-soft) !important;
+    background: transparent !important;
+}
+
+.main-sidebar .brand-text {
+    color: var(--ink) !important;
+    font-weight: 700;
+}
+
+.main-sidebar .user-panel .info a {
+    color: var(--ink) !important;
+    font-weight: 600;
+}
+
+.nav-sidebar .nav-header {
+    color: var(--ink-tertiary) !important;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 18px 12px 6px !important;
+}
+
+.nav-sidebar .nav-item .nav-link {
+    color: var(--ink) !important;
+    border-radius: var(--radius-sm);
+    margin: 1px 8px;
+    padding: 9px 12px !important;
+    transition: background-color 120ms ease;
+}
+
+.nav-sidebar .nav-item .nav-link:hover {
+    background-color: var(--hairline-soft) !important;
+}
+
+/* One neutral icon tone regardless of the per-row text-primary/text-warning/
+   text-purple utility classes already on each <i> - Apple sidebars
+   differentiate by selection state, not per-item hue. Higher specificity
+   than the single-class Bootstrap text-* utilities, so no !important needed. */
+.main-sidebar .nav-sidebar .nav-link .nav-icon {
+    color: var(--ink-tertiary) !important;
+    width: 22px;
+    font-size: 15px;
+}
+
+.nav-sidebar > .nav-item > .nav-link.active,
+.nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
+    background-color: var(--accent-tint) !important;
+    color: var(--accent) !important;
+    font-weight: 600;
+}
+.nav-sidebar > .nav-item > .nav-link.active .nav-icon,
+.nav-sidebar .nav-treeview > .nav-item > .nav-link.active .nav-icon {
+    color: var(--accent) !important;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Cards                                                                    */
+/* ---------------------------------------------------------------------- */
+
+.card {
+    border: none !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-card) !important;
+    background: var(--surface);
+}
+
+.card.card-primary,
+.card.card-secondary {
+    border-top: none !important;
+}
+
+.card-header {
+    background: transparent !important;
+    border-bottom: 1px solid var(--hairline-soft) !important;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+    padding: 18px 22px !important;
+}
+
+.card-header .card-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.card-body { padding: 22px !important; }
+.card-footer {
+    background: transparent !important;
+    border-top: 1px solid var(--hairline-soft) !important;
+    padding: 16px 22px !important;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Buttons                                                                  */
+/* ---------------------------------------------------------------------- */
+
+.btn {
+    border-radius: var(--radius-sm) !important;
+    font-weight: 600;
+    border: none;
+    padding: 8px 18px;
+    transition: background-color 120ms ease, transform 60ms ease;
+    box-shadow: none !important;
+}
+.btn:active { transform: scale(0.98); }
+
+.btn-primary {
+    background-color: var(--accent) !important;
+    border-color: var(--accent) !important;
+}
+.btn-primary:hover, .btn-primary:focus {
+    background-color: var(--accent-hover) !important;
+    border-color: var(--accent-hover) !important;
+}
+.btn-primary:active {
+    background-color: var(--accent-active) !important;
+    border-color: var(--accent-active) !important;
+}
+
+.btn-success { background-color: var(--good) !important; border-color: var(--good) !important; }
+.btn-danger  { background-color: var(--bad)  !important; border-color: var(--bad)  !important; }
+.btn-warning { background-color: var(--warn) !important; border-color: var(--warn) !important; color: #fff !important; }
+
+.btn-outline-secondary {
+    color: var(--ink-secondary) !important;
+    border: 1px solid var(--hairline) !important;
+    background: var(--surface) !important;
+}
+.btn-outline-secondary:hover {
+    background: var(--surface-sunken) !important;
+    color: var(--ink) !important;
+}
+
+.page-item.active .page-link {
+    background-color: var(--accent) !important;
+    border-color: var(--accent) !important;
+}
+.page-link { color: var(--accent); border-color: var(--hairline-soft); }
+
+/* ---------------------------------------------------------------------- */
+/* Dashboard stat cards ("small-box") - white card + tinted icon badge      */
+/* instead of a full saturated color block, matching Apple's own stat/     */
+/* summary card pattern.                                                   */
+/* ---------------------------------------------------------------------- */
+
+.small-box {
+    background: var(--surface) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-card) !important;
+    color: var(--ink) !important;
+    padding: 4px;
+}
+.small-box > .inner { padding: 20px 22px 8px; }
+.small-box h3 {
+    color: var(--ink) !important;
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+.small-box p {
+    color: var(--ink-secondary) !important;
+    font-size: 13.5px;
+    font-weight: 500;
+}
+.small-box .icon {
+    top: 18px;
+    right: 20px;
+    font-size: 44px;
+    opacity: 1;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.small-box .icon i {
+    font-size: 20px !important;
+    position: static !important;
+}
+.small-box.bg-info .icon      { background: var(--accent-tint); color: var(--accent) !important; }
+.small-box.bg-success .icon   { background: var(--good-tint);   color: var(--good) !important; }
+.small-box.bg-warning .icon   { background: var(--warn-tint);   color: var(--warn) !important; }
+.small-box.bg-danger .icon    { background: var(--bad-tint);    color: var(--bad) !important; }
+.small-box.bg-secondary .icon { background: var(--neutral-tint); color: var(--neutral-badge) !important; }
+
+.small-box-footer {
+    background: transparent !important;
+    color: var(--ink-secondary) !important;
+    border-top: 1px solid var(--hairline-soft) !important;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg) !important;
+}
+.small-box-footer:hover { color: var(--accent) !important; }
+
+/* ---------------------------------------------------------------------- */
+/* Forms                                                                    */
+/* ---------------------------------------------------------------------- */
+
+.form-control,
+select.form-control,
+textarea.form-control {
+    border: 1px solid var(--hairline) !important;
+    border-radius: var(--radius-sm) !important;
+    padding: 9px 13px !important;
+    background: var(--surface) !important;
+    color: var(--ink);
+    box-shadow: none !important;
+}
+.form-control:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-tint) !important;
+}
+.form-control:disabled, .form-control[readonly] {
+    background: var(--surface-sunken) !important;
+}
+label { font-weight: 600; color: var(--ink); font-size: 14px; }
+
+/* ---------------------------------------------------------------------- */
+/* Tables / DataTables                                                     */
+/* ---------------------------------------------------------------------- */
+
+.table th {
+    color: var(--ink-tertiary);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-top: none !important;
+    border-bottom: 1px solid var(--hairline-soft) !important;
+    background: transparent;
+}
+.table td {
+    border-top: none !important;
+    border-bottom: 1px solid var(--hairline-soft) !important;
+    color: var(--ink);
+    vertical-align: middle;
+}
+.table-hover tbody tr:hover { background-color: var(--surface-sunken); }
+.table-bordered, .table-bordered th, .table-bordered td { border: none !important; }
+
+/* ---------------------------------------------------------------------- */
+/* Alerts, badges                                                          */
+/* ---------------------------------------------------------------------- */
+
+.alert {
+    border: none !important;
+    border-radius: var(--radius-md) !important;
+    font-weight: 500;
+}
+.alert-success { background: var(--good-tint) !important; color: var(--good) !important; }
+.alert-danger  { background: var(--bad-tint)  !important; color: var(--bad)  !important; }
+.alert-warning { background: var(--warn-tint) !important; color: var(--warn) !important; }
+.alert-info    { background: var(--accent-tint) !important; color: var(--accent) !important; }
+
+.badge {
+    border-radius: 999px;
+    font-weight: 600;
+    padding: 4px 10px;
+}
+.badge-success { background: var(--good-tint) !important; color: var(--good) !important; }
+.badge-danger  { background: var(--bad-tint)  !important; color: var(--bad)  !important; }
+.badge-warning { background: var(--warn-tint) !important; color: var(--warn) !important; }
+.badge-info    { background: var(--accent-tint) !important; color: var(--accent) !important; }
+.badge-secondary { background: var(--neutral-tint) !important; color: var(--neutral-badge) !important; }
+
+/* ---------------------------------------------------------------------- */
+/* Login page                                                              */
+/* ---------------------------------------------------------------------- */
+
+.login-page {
+    background: var(--canvas) !important;
+}
+.login-box { width: 380px; }
+.login-logo img { max-width: 180px !important; }
+.login-card-body {
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-pop) !important;
+    padding: 32px 30px !important;
+}
+.login-page .card { box-shadow: none !important; }
+.login-box-msg {
+    color: var(--ink-secondary);
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+.login-page .input-group-text {
+    background: var(--surface-sunken);
+    border: 1px solid var(--hairline);
+    border-left: none !important;
+    color: var(--ink-tertiary);
+}
+.login-page .form-control {
+    border-right: none !important;
+}
