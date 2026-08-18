@@ -162,15 +162,28 @@ a:hover { color: var(--accent-active); }
     background-color: var(--hairline-soft) !important;
 }
 
-/* One neutral icon tone regardless of the per-row text-primary/text-warning/
-   text-purple utility classes already on each <i> - Apple sidebars
-   differentiate by selection state, not per-item hue. Higher specificity
-   than the single-class Bootstrap text-* utilities, so no !important needed. */
 .main-sidebar .nav-sidebar .nav-link .nav-icon {
     color: var(--ink-tertiary) !important;
     width: 22px;
     font-size: 15px;
 }
+
+/* Per-row icon color, same idea as the original template (each section
+   gets its own hue), but re-picked for contrast against the new *light*
+   sidebar - a couple of Bootstrap's defaults (text-warning's yellow,
+   text-teal's mint) were tuned to pop on the old dark navy background
+   and read as washed-out on white/light grey. Scoped to the sidebar only,
+   so these utility classes still mean their normal Bootstrap colors
+   anywhere else in the app. */
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-primary   { color: #0B69D4 !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-success   { color: #1F8A46 !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-danger    { color: #D32F3C !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-warning   { color: #B8790C !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-info      { color: #0E86A0 !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-purple    { color: #7B4FC9 !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-pink      { color: #D6448A !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-teal      { color: #0E8E77 !important; }
+.main-sidebar .nav-sidebar .nav-link .nav-icon.text-secondary { color: var(--ink-tertiary) !important; }
 
 .nav-sidebar > .nav-item > .nav-link.active,
 .nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
