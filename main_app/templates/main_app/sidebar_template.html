@@ -261,13 +261,6 @@
                     </a>
                 </li>
                 <li class="nav-item">
-                    {% url 'report_class_subjects' as report_class_subjects %}
-                    <a href="{{report_class_subjects}}" class="nav-link {% if report_class_subjects == request.path %} active {% endif %}">
-                        <i data-lucide="table" class="nav-icon text-teal"></i>
-                        <p>Class &amp; Subject Assignments</p>
-                    </a>
-                </li>
-                <li class="nav-item">
                     {% url 'report_activity_log' as report_activity_log %}
                     <a href="{{report_activity_log}}" class="nav-link {% if report_activity_log == request.path %} active {% endif %}">
                         <i data-lucide="history" class="nav-icon text-teal"></i>

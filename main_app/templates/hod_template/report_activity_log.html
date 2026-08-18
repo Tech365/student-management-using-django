@@ -10,14 +10,48 @@
                 <div class="card card-primary">
                     <div class="card-header">
                         <h3 class="card-title">{{page_title}}</h3>
-                        <div class="card-tools">
-                            <a class="btn btn-outline-light btn-sm" href="{% url 'report_activity_log_csv' %}">
-                                <i data-lucide="download"></i> Export CSV
-                            </a>
-                        </div>
                     </div>
                     <div class="card-body">
                         <p class="text-muted">Who created, updated, deleted, or (de)activated admin/staff/student/class/subject/session records.</p>
+                        <form method="GET" class="form-inline">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Actor</label>
+                                <select name="actor" class="form-control">
+                                    <option value="">Everyone</option>
+                                    {% for actor in actors %}
+                                    <option value="{{ actor.id }}" {% if selected_actor == actor.id|stringformat:"s" %}selected{% endif %}>{{ actor }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Action</label>
+                                <select name="action" class="form-control">
+                                    <option value="">Any action</option>
+                                    {% for action in actions %}
+                                    <option value="{{ action }}" {% if selected_action == action %}selected{% endif %}>{{ action|capfirst }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">From</label>
+                                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">To</label>
+                                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                            </div>
+                            <button type="submit" class="btn btn-primary mr-2">Filter</button>
+                            <a class="btn btn-outline-secondary"
+                               href="{% url 'report_activity_log_csv' %}?actor={{ selected_actor }}&action={{ selected_action }}&start_date={{ start_date }}&end_date={{ end_date }}">
+                                <i data-lucide="download"></i> Export CSV
+                            </a>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <p class="text-muted">Showing {{ total_count }} matching event{{ total_count|pluralize }}.</p>
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
@@ -39,8 +73,12 @@
                                             <span class="badge badge-success">Activated</span>
                                             {% elif log.action == 'deactivated' %}
                                             <span class="badge badge-warning">Deactivated</span>
+                                            {% elif log.action == 'granted' %}
+                                            <span class="badge badge-success">Granted</span>
+                                            {% elif log.action == 'rejected' %}
+                                            <span class="badge badge-danger">Rejected</span>
                                             {% else %}
-                                            <span class="badge badge-secondary">{{ log.action }}</span>
+                                            <span class="badge badge-secondary">{{ log.action|capfirst }}</span>
                                             {% endif %}
                                         </td>
                                         <td>{{ log.target_model }}</td>

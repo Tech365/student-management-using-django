@@ -15,10 +15,35 @@
                             <a href="{% url 'bulk_upload_subjects' %}" class="btn btn-outline-secondary btn-sm">
                                 <i data-lucide="file-up"></i> Bulk Upload
                             </a>
+                            <a href="{% url 'manage_subject_csv' %}?course={{ selected_course }}&staff={{ selected_staff }}"
+                               class="btn btn-outline-secondary btn-sm">
+                                <i data-lucide="download"></i> Export CSV
+                            </a>
                         </div>
                     </div>
                     <!-- /.card-header -->
                     <div class="card-body">
+                        <form method="GET" class="form-inline mb-3">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Class</label>
+                                <select name="course" class="form-control">
+                                    <option value="">All Classes</option>
+                                    {% for course in courses %}
+                                    <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Teacher</label>
+                                <select name="staff" class="form-control">
+                                    <option value="">All Teachers</option>
+                                    {% for teacher in staff_list %}
+                                    <option value="{{ teacher.id }}" {% if selected_staff == teacher.id|stringformat:"s" %}selected{% endif %}>{{ teacher.admin.last_name }}, {{ teacher.admin.first_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Filter</button>
+                        </form>
                         <table id="example2" class="js-datatable table table-bordered table-hover">
                             <thead>
                                 <tr>

@@ -575,3 +575,24 @@ table.dataTable.dtr-inline.collapsed > tbody > tr.parent > th:first-child:before
 .nav-header-toggle.is-collapsed .nav-header-chevron {
     transform: rotate(-90deg);
 }
+
+/* ---------------------------------------------------------------------- */
+/* Print - AdminLTE ships Bootstrap's d-print-* utilities but never uses   */
+/* them on its own chrome, so printing any page as-is includes the         */
+/* sidebar, top navbar, and breadcrumb, and lets the content-wrapper's     */
+/* margin-left clip a chunk of the printed content off the left edge.      */
+/* Reports meant to leave the system (e.g. Results, for a parent or a      */
+/* committee) can opt individual controls out with d-print-none.           */
+/* ---------------------------------------------------------------------- */
+
+@media print {
+    .main-sidebar, .main-header, .content-header .breadcrumb, .main-footer {
+        display: none !important;
+    }
+    .content-wrapper {
+        margin-left: 0 !important;
+    }
+    .card {
+        border: none !important;
+    }
+}

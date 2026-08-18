@@ -58,6 +58,7 @@
 
                 <div class="card">
                     <div class="card-body">
+                        <p class="text-muted">Showing {{ total_count }} matching request{{ total_count|pluralize }}.</p>
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
@@ -87,6 +88,7 @@
                                 </tbody>
                             </table>
                         </div>
+                        {% include "includes/pagination.html" %}
                     </div>
                 </div>
             </div>

@@ -931,6 +931,43 @@ class AttendanceSummaryReportTests(TestCase):
         self.assertEqual(summary[0]['total'], 3)
         self.assertEqual(summary[0]['present'], 1)
 
+    def test_student_summary_rows_link_to_their_attendance_history(self):
+        response = self.client.get(reverse('report_attendance_summary'), {
+            'course': self.course.id, 'start_date': '2024-06-01', 'end_date': '2024-06-30',
+        })
+        rows = {row['student_id']: row for row in response.context['student_summary']}
+        self.assertIn(self.student.id, rows)
+        self.assertContains(response, f"?student={self.student.id}")
+
+
+class AdminDashboardAttendanceChartTests(TestCase):
+    """The dashboard's 'Attendance % by Subject' chart used to show a raw
+    count of how many times attendance was taken (not attendance quality)
+    and truncated subject names to 7 characters."""
+
+    def setUp(self):
+        make_admin("dashboard_chart_admin@example.com")
+        self.client.login(username="dashboard_chart_admin@example.com", password=PASSWORD)
+        self.course = make_course("Dashboard Chart Course")
+        self.session = make_session()
+        self.staff = make_staff("dashboard_chart_staff@example.com", self.course)
+        self.subject = make_subject("A Genuinely Long Subject Name", self.staff, self.course)
+        self.student_present = make_student("dashboard_chart_present@example.com", self.course, self.session)
+        self.student_absent = make_student("dashboard_chart_absent@example.com", self.course, self.session)
+        today = datetime.date.today()
+        attendance = Attendance.objects.create(session=self.session, subject=self.subject, date=today)
+        AttendanceReport.objects.create(student=self.student_present, attendance=attendance, status=True)
+        AttendanceReport.objects.create(student=self.student_absent, attendance=attendance, status=False)
+
+    def test_chart_shows_attendance_percentage_not_raw_count(self):
+        response = self.client.get(reverse('admin_home'))
+        # 1 present out of 2 reports = 50%, not "2" (the old raw-count metric).
+        self.assertEqual(response.context['attendance_list'], [50.0])
+
+    def test_subject_name_is_not_truncated(self):
+        response = self.client.get(reverse('admin_home'))
+        self.assertEqual(response.context['subject_list'], ['A Genuinely Long Subject Name'])
+
 
 class AttendanceNotTakenReportTests(TestCase):
     """Lists subjects with no Attendance row at all for a given date - the
@@ -1091,6 +1128,22 @@ class LeaveReportTests(TestCase):
         body = response.content.decode()
         self.assertIn('Sick', body)
         self.assertIn('Family event', body)
+
+    def test_page_is_paginated_but_csv_is_not(self):
+        for i in range(30):
+            LeaveReportStudent.objects.create(
+                student=self.student, date=f"2024-07-{(i % 28) + 1:02d}", message=f"Leave {i}", status=0)
+        # 30 new student leaves + 1 student + 1 staff leave from setUp = 32,
+        # more than one page of 25.
+        response = self.client.get(reverse('report_leave'))
+        self.assertTrue(response.context['page_obj'].has_next())
+        self.assertEqual(response.context['total_count'], 32)
+
+        # Count data rows, not a substring match - the course fixture is
+        # itself named "Leave Report Course", which contains "Leave " too.
+        csv_response = self.client.get(reverse('report_leave_csv'))
+        data_rows = csv_response.content.decode().strip().splitlines()[1:]
+        self.assertEqual(len(data_rows), 32)
 
 
 class StaffStudentLeaveApprovalTests(TestCase):
@@ -1365,10 +1418,10 @@ class ResultsReportTests(TestCase):
         make_admin("report_admin_results@example.com")
         self.client.login(username="report_admin_results@example.com", password=PASSWORD)
         self.course = make_course("Results Report Course")
-        session = make_session()
+        self.session = make_session()
         self.staff = make_staff("report_results_staff@example.com", self.course)
         self.subject = make_subject("Results Report Subject", self.staff, self.course)
-        self.student = make_student("report_results_student@example.com", self.course, session)
+        self.student = make_student("report_results_student@example.com", self.course, self.session)
         StudentResult.objects.create(student=self.student, subject=self.subject, test=8, exam=16)
 
     def test_summary_shows_averages(self):
@@ -1388,6 +1441,25 @@ class ResultsReportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()
         self.assertIn('Results Report Subject', body)
+
+    def test_sort_by_score_ranks_highest_first(self):
+        top_student = make_student("results_top_student@example.com", self.course, self.session)
+        StudentResult.objects.create(student=top_student, subject=self.subject, test=10, exam=20)
+        response = self.client.get(reverse('report_results'), {'sort': 'score_desc'})
+        results = list(response.context['results'])
+        self.assertEqual(results[0].student, top_student)
+
+    def test_sort_by_score_ranks_lowest_first(self):
+        bottom_student = make_student("results_bottom_student@example.com", self.course, self.session)
+        StudentResult.objects.create(student=bottom_student, subject=self.subject, test=1, exam=1)
+        response = self.client.get(reverse('report_results'), {'sort': 'score_asc'})
+        results = list(response.context['results'])
+        self.assertEqual(results[0].student, bottom_student)
+
+    def test_invalid_sort_falls_back_to_default(self):
+        response = self.client.get(reverse('report_results'), {'sort': 'not-a-real-option'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_sort'], 'class')
 
 
 class AddAdminTests(TestCase):
@@ -1512,6 +1584,39 @@ class AuditLogTests(TestCase):
         response = self.client.get(reverse('report_activity_log_csv'))
         self.assertEqual(response.status_code, 200)
         self.assertIn('CSV Logged Course', response.content.decode())
+
+    def test_activity_log_filters_by_action(self):
+        self.client.post(reverse('add_course'), {'name': 'Kept Course'})
+        course = make_course("Doomed Course")
+        self.client.get(reverse('delete_course', args=[course.id]))
+
+        response = self.client.get(reverse('report_activity_log'), {'action': 'created'})
+        body = response.content.decode()
+        self.assertIn('Kept Course', body)
+        self.assertNotIn('Doomed Course', body)
+
+    def test_activity_log_filters_by_actor(self):
+        make_admin("audit_admin_2@example.com")
+        other_client = Client()
+        other_client.login(username="audit_admin_2@example.com", password=PASSWORD)
+        other_client.post(reverse('add_course'), {'name': 'Other Actor Course'})
+        self.client.post(reverse('add_course'), {'name': 'Original Actor Course'})
+
+        me = CustomUser.objects.get(email="audit_admin@example.com")
+        response = self.client.get(reverse('report_activity_log'), {'actor': me.id})
+        body = response.content.decode()
+        self.assertIn('Original Actor Course', body)
+        self.assertNotIn('Other Actor Course', body)
+
+    def test_activity_log_csv_respects_filters(self):
+        self.client.post(reverse('add_course'), {'name': 'Kept In Csv'})
+        course = make_course("Excluded From Csv")
+        self.client.get(reverse('delete_course', args=[course.id]))
+
+        response = self.client.get(reverse('report_activity_log_csv'), {'action': 'created'})
+        body = response.content.decode()
+        self.assertIn('Kept In Csv', body)
+        self.assertNotIn('Excluded From Csv', body)
 
 
 class ChronicAbsenceFlaggingTests(TestCase):
@@ -2556,17 +2661,33 @@ class CoTeachingTests(TestCase):
         self.assertEqual(teacher_course_ids(self.teacher_a), {self.course.id})
         self.assertEqual(teacher_course_ids(self.teacher_b), {self.course.id})
 
-    def test_report_class_subjects_lists_both_teachers(self):
+    def test_manage_subject_lists_both_teachers(self):
         make_admin("coteach_report_admin@example.com")
         self.client.login(username="coteach_report_admin@example.com", password=PASSWORD)
-        response = self.client.get(reverse('report_class_subjects'))
-        self.assertContains(response, str(self.teacher_a))
-        self.assertContains(response, str(self.teacher_b))
+        # manage_subject.html renders the teacher via {{ t.admin }} -
+        # CustomUser.__str__ ("Last, First"), not Staff.__str__ ("Last First").
+        response = self.client.get(reverse('manage_subject'))
+        self.assertContains(response, str(self.teacher_a.admin))
+        self.assertContains(response, str(self.teacher_b.admin))
 
-        csv_response = self.client.get(reverse('report_class_subjects_csv'))
+        # The CSV export goes through _class_subjects_report_data instead,
+        # which joins Staff.__str__ values directly - "Last First".
+        csv_response = self.client.get(reverse('manage_subject_csv'))
         body = csv_response.content.decode()
         self.assertIn(str(self.teacher_a), body)
         self.assertIn(str(self.teacher_b), body)
+
+    def test_manage_subject_filters_by_teacher(self):
+        # The old standalone "Class & Subject Assignments" report's teacher
+        # filter, now folded into Manage Subject itself.
+        make_admin("coteach_filter_admin@example.com")
+        self.client.login(username="coteach_filter_admin@example.com", password=PASSWORD)
+        solo_subject = make_subject("Solo Subject", self.teacher_a, self.course)
+
+        response = self.client.get(reverse('manage_subject'), {'staff': self.teacher_b.id})
+        names = [s.name for s in response.context['subjects']]
+        self.assertIn('Shared Subject', names)
+        self.assertNotIn('Solo Subject', names)
 
     def test_add_subject_with_two_teachers(self):
         make_admin("coteach_add_admin@example.com")

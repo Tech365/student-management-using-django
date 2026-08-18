@@ -174,7 +174,7 @@
                                 <tbody>
                                     {% for row in student_summary %}
                                     <tr class="{% if row.flagged %}table-danger{% endif %}">
-                                        <td>{{ row.name }}</td>
+                                        <td><a href="{% url 'report_student_attendance' %}?student={{ row.student_id }}">{{ row.name }}</a></td>
                                         <td>{{ row.total }}</td>
                                         <td>{{ row.present }}</td>
                                         <td>{{ row.absent }}</td>

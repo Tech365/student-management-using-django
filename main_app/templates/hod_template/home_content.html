@@ -105,8 +105,8 @@
                 <!-- LINE CHART -->
                 <div class="card card-secondary">
                   <div class="card-header">
-                    <h3 class="card-title">{{page_title}}</h3>
-    
+                    <h3 class="card-title">Students &amp; Staff</h3>
+
                     <div class="card-tools">
                       <button type="button" class="btn btn-tool" data-card-widget="collapse"><i class="fas fa-minus"></i>
                       </button>
@@ -123,7 +123,7 @@
                 <div class="col-md-6">
                     <div class="card card-secondary">
               <div class="card-header">
-                <h3 class="card-title">{{page_title}}</h3>
+                <h3 class="card-title">Attendance % by Subject &mdash; This Month</h3>
 
                 <div class="card-tools">
                   <button type="button" class="btn btn-tool" data-card-widget="collapse"><i class="fas fa-minus"></i>
@@ -180,42 +180,38 @@
       labels  : subject_list,
       datasets: [
       {
-        label               : 'Attendance Per Subject',
+        label               : 'Attendance %',
         backgroundColor     : 'rgba(88,81,232,0.85)',
         borderColor         : '#5851E8',
-        pointRadius          : false,
-        pointColor          : '#5851E8',
-        pointStrokeColor    : '#5851E8',
-        pointHighlightFill  : '#fff',
-        pointHighlightStroke: '#5851E8',
         data                : attendance_list
-      }, 
-      
+      },
       ]
     }
         var barChartCanvas = $('#barChart').get(0).getContext('2d')
-        var temp0 = barChartData.datasets[0]
-        //var temp1 = areaChartData.datasets[1]
-        barChartData.datasets[0] = temp0
-       // barChartData.datasets[1] = temp0
-    
-    var stackedBarChartOptions = {
+
+    var barChartOptions = {
       responsive              : true,
       maintainAspectRatio     : false,
       scales: {
-        xAxes: [{
-          stacked: true,
-        }],
         yAxes: [{
-          stacked: true
+          ticks: {
+            beginAtZero: true,
+            max: 100,
+            callback: function (value) { return value + '%' }
+          }
         }]
+      },
+      tooltips: {
+        callbacks: {
+          label: function (item) { return item.yLabel + '% attendance' }
+        }
       }
     }
-    
+
         var barChart = new Chart(barChartCanvas, {
-          type: 'bar', 
+          type: 'bar',
           data: barChartData,
-          options: stackedBarChartOptions
+          options: barChartOptions
         })
       })
   </script>

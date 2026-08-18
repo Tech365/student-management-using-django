@@ -32,3 +32,14 @@ def avatar_url(profile_pic):
     if value and not (value.startswith('/') or '://' in value):
         value = ''
     return value or static(DEFAULT_AVATAR)
+
+
+@register.filter
+def without_page(query_dict):
+    """request.GET with the 'page' key stripped and re-encoded, for
+    pagination links - so moving to page 2 of a filtered report doesn't
+    silently drop the filters (course, date range, ...) that produced the
+    list being paged through in the first place."""
+    qd = query_dict.copy()
+    qd.pop('page', None)
+    return qd.urlencode()

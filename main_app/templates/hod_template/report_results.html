@@ -7,7 +7,7 @@
     <div class="container-fluid">
         <div class="row">
             <div class="col-md-12">
-                <div class="card card-primary">
+                <div class="card card-primary d-print-none">
                     <div class="card-header">
                         <h3 class="card-title">{{page_title}}</h3>
                     </div>
@@ -31,11 +31,22 @@
                                     {% endfor %}
                                 </select>
                             </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Sort</label>
+                                <select name="sort" class="form-control">
+                                    <option value="class" {% if selected_sort == "class" %}selected{% endif %}>Class / Subject</option>
+                                    <option value="score_desc" {% if selected_sort == "score_desc" %}selected{% endif %}>Highest score first</option>
+                                    <option value="score_asc" {% if selected_sort == "score_asc" %}selected{% endif %}>Lowest score first</option>
+                                </select>
+                            </div>
                             <button type="submit" class="btn btn-primary mr-2">Filter</button>
-                            <a class="btn btn-outline-secondary"
-                               href="{% url 'report_results_csv' %}?course={{ selected_course }}&subject={{ selected_subject }}">
+                            <a class="btn btn-outline-secondary mr-2"
+                               href="{% url 'report_results_csv' %}?course={{ selected_course }}&subject={{ selected_subject }}&sort={{ selected_sort }}">
                                 <i data-lucide="download"></i> Export CSV
                             </a>
+                            <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+                                <i data-lucide="printer"></i> Print
+                            </button>
                         </form>
                     </div>
                 </div>
@@ -74,6 +85,7 @@
 
                 <div class="card">
                     <div class="card-body">
+                        <p class="text-muted d-print-none">Showing {{ total_count }} matching result{{ total_count|pluralize }}.</p>
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
@@ -93,6 +105,9 @@
                                     {% endfor %}
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="d-print-none">
+                            {% include "includes/pagination.html" %}
                         </div>
                     </div>
                 </div>

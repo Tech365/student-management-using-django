@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 def admin_home(request):
     total_staff = Staff.objects.all().count()
     total_students = Student.objects.all().count()
-    subjects = Subject.objects.all()
+    subjects = Subject.objects.select_related('course').order_by('course__name', 'name')
     total_subject = subjects.count()
     total_course = Course.objects.all().count()
     total_pending_leave = (
@@ -49,12 +49,25 @@ def admin_home(request):
         + LeaveReportStaff.objects.filter(status=0).count()
     )
     total_pending_parent_links = ParentStudentLink.objects.filter(status=0).count()
-    attendance_counts = dict(
-        Attendance.objects.filter(subject__in=subjects)
-        .values_list('subject').annotate(count=Count('id'))
+
+    # Attendance % per subject, this month - not a raw count of how many
+    # times attendance was *taken* (which the chart used to show and which
+    # says nothing about actual attendance). Full subject names too - they
+    # used to be hard-truncated to 7 characters, which just made the chart
+    # unreadable rather than more compact.
+    month_start = date.today().replace(day=1).isoformat()
+    by_subject_raw = (
+        AttendanceReport.objects.filter(
+            attendance__subject__in=subjects, attendance__date__gte=month_start)
+        .values('attendance__subject_id')
+        .annotate(total=Count('id'), present=Count('id', filter=Q(status=True)))
     )
-    subject_list = [subject.name[:7] for subject in subjects]
-    attendance_list = [attendance_counts.get(subject.id, 0) for subject in subjects]
+    percent_by_subject = {
+        row['attendance__subject_id']: round(row['present'] / row['total'] * 100, 1) if row['total'] else 0
+        for row in by_subject_raw
+    }
+    subject_list = [subject.name for subject in subjects]
+    attendance_list = [percent_by_subject.get(subject.id, 0) for subject in subjects]
     context = {
         'page_title': "Administrative Dashboard",
         'total_students': total_students,
@@ -642,9 +655,13 @@ def manage_course(request):
 
 
 def manage_subject(request):
-    subjects = Subject.objects.prefetch_related('staff__admin').order_by('id')
+    data = _class_subjects_report_data(request)
     context = {
-        'subjects': subjects,
+        'subjects': data['subjects'],
+        'courses': Course.objects.order_by('name'),
+        'staff_list': Staff.objects.select_related('admin').order_by('admin__first_name'),
+        'selected_course': data['course_id'],
+        'selected_staff': data['staff_id'],
         'page_title': 'Manage Subjects'
     }
     return render(request, "hod_template/manage_subject.html", context)
@@ -1503,20 +1520,7 @@ def _class_subjects_report_data(request):
     return {'course_id': course_id, 'staff_id': staff_id, 'subjects': subjects}
 
 
-def report_class_subjects(request):
-    data = _class_subjects_report_data(request)
-    context = {
-        'page_title': 'Class & Subject Assignments',
-        'courses': Course.objects.order_by('name'),
-        'staff_list': Staff.objects.select_related('admin').order_by('admin__first_name'),
-        'selected_course': data['course_id'],
-        'selected_staff': data['staff_id'],
-        'subjects': data['subjects'],
-    }
-    return render(request, 'hod_template/report_class_subjects.html', context)
-
-
-def report_class_subjects_csv(request):
+def manage_subject_csv(request):
     data = _class_subjects_report_data(request)
     rows = [(s.course.name, s.name, ', '.join(str(t) for t in s.staff.all())) for s in data['subjects']]
     return csv_response('class_subject_assignments.csv', ['Class', 'Subject', 'Teacher'], rows)
@@ -1651,6 +1655,7 @@ def _attendance_summary_data(request):
         percent = round(present / total * 100, 1) if total else 0
         seen_student_ids.add(row['student_id'])
         student_summary.append({
+            'student_id': row['student_id'],
             'name': f"{row['student__admin__last_name']}, {row['student__admin__first_name']}",
             'total': total,
             'present': present,
@@ -1668,6 +1673,7 @@ def _attendance_summary_data(request):
     if leave_only_ids:
         for student in Student.objects.filter(id__in=leave_only_ids).select_related('admin'):
             student_summary.append({
+                'student_id': student.id,
                 'name': str(student),
                 'total': 0,
                 'present': 0,
@@ -1926,10 +1932,18 @@ def _leave_report_data(request):
 
 def report_leave(request):
     data = _leave_report_data(request)
+    # Not date-bounded by default (unlike Attendance Summary) - a pending
+    # leave request stays actionable no matter how old it is, so defaulting
+    # this to "this month" would quietly hide the exact requests an admin
+    # still needs to approve or reject. Paginating instead keeps the page
+    # itself bounded without hiding anything.
+    records = paginate(request, data['records'])
     context = {
         'page_title': 'Leave Report',
         'courses': Course.objects.order_by('name'),
-        'records': data['records'],
+        'records': records,
+        'page_obj': records,
+        'total_count': len(data['records']),
         'selected_type': data['leave_type'],
         'selected_status': data['status'],
         'selected_course': data['course_id'],
@@ -1946,16 +1960,29 @@ def report_leave_csv(request):
     return csv_response('leave_report.csv', ['Type', 'Name', 'Class', 'Date', 'Status', 'Message'], rows)
 
 
+RESULTS_SORT_OPTIONS = {
+    'class': ('subject__course__name', 'subject__name', 'student__admin__first_name'),
+    'score_desc': ('-combined', 'student__admin__first_name'),
+    'score_asc': ('combined', 'student__admin__first_name'),
+}
+
+
 def _results_report_data(request):
     course_id = request.GET.get('course') or ''
     subject_id = request.GET.get('subject') or ''
+    sort = request.GET.get('sort') or 'class'
+    if sort not in RESULTS_SORT_OPTIONS:
+        sort = 'class'
 
     results = StudentResult.objects.select_related('student__admin', 'subject', 'subject__course')
     if course_id:
         results = results.filter(subject__course_id=course_id)
     if subject_id:
         results = results.filter(subject_id=subject_id)
-    results = results.order_by('subject__course__name', 'subject__name', 'student__admin__first_name')
+    # Only needed for the two score-ranked sorts, but annotating
+    # unconditionally is cheap and keeps `combined` available to the
+    # template either way (e.g. if it wants to show it later).
+    results = results.annotate(combined=F('test') + F('exam')).order_by(*RESULTS_SORT_OPTIONS[sort])
 
     summary = None
     agg = results.aggregate(avg_test=Avg('test'), avg_exam=Avg('exam'), count=Count('id'))
@@ -1966,18 +1993,22 @@ def _results_report_data(request):
             'avg_exam': round(agg['avg_exam'], 1),
         }
 
-    return {'course_id': course_id, 'subject_id': subject_id, 'results': results, 'summary': summary}
+    return {'course_id': course_id, 'subject_id': subject_id, 'sort': sort, 'results': results, 'summary': summary}
 
 
 def report_results(request):
     data = _results_report_data(request)
+    results = paginate(request, data['results'])
     context = {
         'page_title': 'Results Summary Report',
         'courses': Course.objects.order_by('name'),
         'subjects': Subject.objects.select_related('course').order_by('course__name', 'name'),
         'selected_course': data['course_id'],
         'selected_subject': data['subject_id'],
-        'results': data['results'],
+        'selected_sort': data['sort'],
+        'results': results,
+        'page_obj': results,
+        'total_count': data['summary']['count'] if data['summary'] else 0,
         'summary': data['summary'],
     }
     return render(request, 'hod_template/report_results.html', context)
@@ -1990,18 +2021,54 @@ def report_results_csv(request):
     return csv_response('results_report.csv', ['Class', 'Subject', 'Student', 'Test', 'Exam'], rows)
 
 
+def _activity_log_data(request):
+    actor_id = request.GET.get('actor') or ''
+    action = request.GET.get('action') or ''
+    start_date = request.GET.get('start_date') or ''
+    end_date = request.GET.get('end_date') or ''
+
+    logs = AuditLog.objects.select_related('actor')
+    if actor_id:
+        logs = logs.filter(actor_id=actor_id)
+    if action:
+        logs = logs.filter(action=action)
+    if start_date:
+        logs = logs.filter(created_at__date__gte=start_date)
+    if end_date:
+        logs = logs.filter(created_at__date__lte=end_date)
+
+    return {
+        'actor_id': actor_id, 'action': action, 'start_date': start_date, 'end_date': end_date,
+        'logs': logs,
+    }
+
+
 def report_activity_log(request):
-    logs = paginate(request, AuditLog.objects.select_related('actor'))
+    data = _activity_log_data(request)
+    logs = paginate(request, data['logs'])
     context = {
         'page_title': 'Activity Log',
+        # Only actors who've actually logged something - not every account
+        # in the system, most of which have never triggered an audit event.
+        'actors': CustomUser.objects.filter(audit_actions__isnull=False).distinct().order_by('first_name'),
+        # Derived from what's actually in the table rather than a
+        # hand-maintained list, so a new action type someone adds later
+        # shows up here automatically instead of silently being unfilterable.
+        'actions': AuditLog.objects.order_by().values_list('action', flat=True).distinct(),
+        'selected_actor': data['actor_id'],
+        'selected_action': data['action'],
+        'start_date': data['start_date'],
+        'end_date': data['end_date'],
         'logs': logs,
         'page_obj': logs,
+        'total_count': data['logs'].count(),
     }
     return render(request, 'hod_template/report_activity_log.html', context)
 
 
 def report_activity_log_csv(request):
-    logs = AuditLog.objects.select_related('actor')
+    data = _activity_log_data(request)
+    logs = data['logs']
     rows = [(log.created_at.strftime('%Y-%m-%d %H:%M'), str(log.actor) if log.actor else 'Unknown',
               log.action, log.target_model, log.target_repr) for log in logs]
     return csv_response('activity_log.csv', ['Timestamp', 'Actor', 'Action', 'Target Type', 'Target'], rows)
