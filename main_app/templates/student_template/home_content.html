@@ -15,7 +15,7 @@
                         <p>Total Attendance</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-bag"></i>
+                        <i data-lucide="clipboard-check"></i>
                     </div>
                     {# <a href="#" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a> #}
                 </div>
@@ -30,7 +30,7 @@
                         <p>Percentage Present</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-person-add"></i>
+                        <i data-lucide="check"></i>
                     </div>
                     {# <a href="#" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a> #}
                 </div>
@@ -45,7 +45,7 @@
                         <p>Percentage Absent</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-stats-bars"></i>
+                        <i data-lucide="x"></i>
                     </div>
                     {# <a href="#" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a> #}
                 </div>
@@ -60,7 +60,7 @@
                         <p>Total Subject</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-pie-graph"></i>
+                        <i data-lucide="book-open"></i>
                     </div>
                     {# <a href="#" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a> #}
                 </div>
@@ -135,7 +135,7 @@ $(document).ready(function(){
       datasets: [
         {
           data: [{{percent_present}}, {{percent_absent}}],
-          backgroundColor : ['#00a65a','#f56954'],
+          backgroundColor : ['#1B8A5A','#D3282C'],
         }
       ]
     }
@@ -156,25 +156,25 @@ var areaChartData = {
     datasets: [
     {
         label               : 'Present In Class',
-        backgroundColor     : 'rgba(60,141,188,0.9)',
-        borderColor         : 'rgba(60,141,188,0.8)',
+        backgroundColor     : 'rgba(27,138,90,0.85)',
+        borderColor         : '#1B8A5A',
         pointRadius          : false,
-        pointColor          : '#3b8bba',
-        pointStrokeColor    : 'rgba(60,141,188,1)',
+        pointColor          : '#1B8A5A',
+        pointStrokeColor    : '#1B8A5A',
         pointHighlightFill  : '#fff',
-        pointHighlightStroke: 'rgba(60,141,188,1)',
+        pointHighlightStroke: '#1B8A5A',
         data                : data_present
       },
 
       {
         label               : 'Absent In Class',
-        backgroundColor     : 'rgba(210, 214, 222, 1)',
-        borderColor         : 'rgba(210, 214, 222, 1)',
+        backgroundColor     : 'rgba(211,40,44,0.75)',
+        borderColor         : '#D3282C',
         pointRadius         : false,
-        pointColor          : 'rgba(210, 214, 222, 1)',
-        pointStrokeColor    : '#c1c7d1',
+        pointColor          : '#D3282C',
+        pointStrokeColor    : '#D3282C',
         pointHighlightFill  : '#fff',
-        pointHighlightStroke: 'rgba(220,220,220,1)',
+        pointHighlightStroke: '#D3282C',
         data                : data_absent
       },
     ]

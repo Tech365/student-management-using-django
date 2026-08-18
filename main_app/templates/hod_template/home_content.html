@@ -15,7 +15,7 @@
                         <p>Total Students</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-bag"></i>
+                        <i data-lucide="graduation-cap"></i>
                     </div>
                     <a href="{% url 'manage_student' %}" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a>
 
@@ -31,7 +31,7 @@
                         <p>Total Staff</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-stats-bars"></i>
+                        <i data-lucide="presentation"></i>
                     </div>
                     <a href="{% url 'manage_staff' %}" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a>
                 </div>
@@ -46,7 +46,7 @@
                         <p>Total Class</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-person-add"></i>
+                        <i data-lucide="book"></i>
                     </div>
                     <a href="{% url 'manage_course' %}" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a>
                 </div>
@@ -61,7 +61,7 @@
                         <p>Total Subjects</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-pie-graph"></i>
+                        <i data-lucide="book-open"></i>
                     </div>
                     <a href="{% url 'manage_subject' %}" class="small-box-footer">More info <i data-lucide="circle-arrow-right"></i></a>
                 </div>
@@ -155,7 +155,7 @@
             datasets: [
               {
                 data:[{{total_students}}, {{total_staff}}],
-                backgroundColor : ['#00a65a', '#f39c12',],
+                backgroundColor : ['#5851E8', '#0E86A0',],
               }
             ]
           }
@@ -181,13 +181,13 @@
       datasets: [
       {
         label               : 'Attendance Per Subject',
-        backgroundColor     : '#6c757d',
-        borderColor         : 'rgba(60,141,188,0.8)',
+        backgroundColor     : 'rgba(88,81,232,0.85)',
+        borderColor         : '#5851E8',
         pointRadius          : false,
-        pointColor          : '#3b8bba',
-        pointStrokeColor    : 'rgba(60,141,188,1)',
+        pointColor          : '#5851E8',
+        pointStrokeColor    : '#5851E8',
         pointHighlightFill  : '#fff',
-        pointHighlightStroke: 'rgba(60,141,188,1)',
+        pointHighlightStroke: '#5851E8',
         data                : attendance_list
       }, 
       

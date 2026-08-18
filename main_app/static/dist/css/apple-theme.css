@@ -427,6 +427,47 @@ label { font-weight: 600; color: var(--ink); font-size: 13px; }
 .table-bordered, .table-bordered th, .table-bordered td { border: none !important; }
 .table svg.lucide { width: 14px; height: 14px; vertical-align: -0.15em; }
 
+/* DataTables Responsive's mobile row-expand control (the "+"/"-" circle
+   used on manage-list pages once columns start collapsing on narrow
+   screens) ships with its own hardcoded blue/red, not the app's palette. */
+table.dataTable.dtr-inline.collapsed > tbody > tr[role="row"] > td:first-child:before,
+table.dataTable.dtr-inline.collapsed > tbody > tr[role="row"] > th:first-child:before {
+    background-color: var(--accent) !important;
+}
+table.dataTable.dtr-inline.collapsed > tbody > tr.parent > td:first-child:before,
+table.dataTable.dtr-inline.collapsed > tbody > tr.parent > th:first-child:before {
+    background-color: var(--bad) !important;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Modals - the shared confirm dialog (base.html) and the per-page         */
+/* notification-send popups (staff/student notification pages) were still */
+/* stock Bootstrap chrome until this pass: square-ish corners, a default   */
+/* border color, no relation to the card/hairline system used everywhere   */
+/* else. This brings them in line - flat hairline border, no heavy         */
+/* shadow beyond the one every floating/overlaid surface gets.             */
+/* ---------------------------------------------------------------------- */
+
+.modal-content {
+    border: 1px solid var(--hairline) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-pop) !important;
+}
+.modal-header {
+    border-bottom: 1px solid var(--hairline) !important;
+    padding: 14px 18px !important;
+}
+.modal-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+}
+.modal-body { padding: 18px !important; }
+.modal-footer {
+    border-top: 1px solid var(--hairline) !important;
+    padding: 12px 18px !important;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Alerts, badges                                                          */
 /* ---------------------------------------------------------------------- */

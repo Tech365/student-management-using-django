@@ -15,7 +15,7 @@
                         <p>Total Students</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-bag"></i>
+                        <i data-lucide="graduation-cap"></i>
                     </div>
                    
                 </div>
@@ -30,7 +30,7 @@
                         <p>Total Attendance Taken</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-stats-bars"></i>
+                        <i data-lucide="clipboard-check"></i>
                     </div>
                    
                 </div>
@@ -45,7 +45,7 @@
                         <p>Total Leave Applied</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-person-add"></i>
+                        <i data-lucide="clock-alert"></i>
                     </div>
                    
                 </div>
@@ -60,7 +60,7 @@
                         <p>Total Subjects</p>
                     </div>
                     <div class="icon">
-                        <i class="ion ion-pie-graph"></i>
+                        <i data-lucide="book-open"></i>
                     </div>
                    
                 </div>
@@ -124,7 +124,7 @@
             datasets: [
               {
                 data:[{{total_attendance}}, {{total_leave}}],
-                backgroundColor : ['#00a65a', '#f39c12',],
+                backgroundColor : ['#1B8A5A', '#B25E00',],
               }
             ]
           }
@@ -150,13 +150,13 @@
       datasets: [
       {
         label               : 'Attendance Per Subject',
-        backgroundColor     : '#6c757d',
-        borderColor         : 'rgba(60,141,188,0.8)',
+        backgroundColor     : 'rgba(88,81,232,0.85)',
+        borderColor         : '#5851E8',
         pointRadius          : false,
-        pointColor          : '#3b8bba',
-        pointStrokeColor    : 'rgba(60,141,188,1)',
+        pointColor          : '#5851E8',
+        pointStrokeColor    : '#5851E8',
         pointHighlightFill  : '#fff',
-        pointHighlightStroke: 'rgba(60,141,188,1)',
+        pointHighlightStroke: '#5851E8',
         data                : attendance_list
       }, 
       

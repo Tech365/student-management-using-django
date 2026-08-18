@@ -17,6 +17,7 @@
                         {% elif not results %}
                         <p class="text-muted">No matches for &ldquo;{{ query }}&rdquo;.</p>
                         {% else %}
+                        <div class="table-responsive">
                         <table class="table table-bordered table-hover">
                             <thead>
                                 <tr>
@@ -53,6 +54,7 @@
                                 {% endfor %}
                             </tbody>
                         </table>
+                        </div>
                         {% endif %}
                     </div>
                 </div>

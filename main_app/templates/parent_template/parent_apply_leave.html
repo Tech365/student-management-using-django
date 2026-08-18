@@ -50,6 +50,7 @@
                 <div class="card card-primary">
                     <div class="card-header"><h3 class="card-title">Leave History for {{ active_student.admin.first_name }}</h3></div>
                     <div class="table">
+                        <div class="table-responsive">
                         <table class="table table-bordered">
                             <tr>
                                 <th>ID</th>
@@ -74,6 +75,7 @@
                             </tr>
                             {% endfor %}
                         </table>
+                        </div>
                     </div>
                 </div>
                 {% endif %}
