@@ -275,6 +275,7 @@
         // Sidebar section headers (PEOPLE, ACADEMICS, ...) collapse/expand
         // on click - the admin sidebar in particular has 7+ of these, and
         // it was always showing every item in every section at once.
+        // Closed by default; the user opens whichever sections they want.
         // State is per-label (not per-role) and persisted in localStorage
         // so it survives the full-page navigation every link here does.
         // Whatever section holds the current page's active link is always
@@ -293,7 +294,8 @@
 
                 var key = 'navGroupCollapsed:' + header.textContent.trim();
                 var hasActive = group.some(function (li) { return li.querySelector('.nav-link.active'); });
-                var collapsed = !hasActive && localStorage.getItem(key) === '1';
+                var stored = localStorage.getItem(key);
+                var collapsed = hasActive ? false : (stored === null ? true : stored === '1');
 
                 var chevron = document.createElement('i');
                 chevron.setAttribute('data-lucide', 'chevron-down');

@@ -8,8 +8,6 @@
     <title>Madrasa Jamaliyah | Log in</title>
     <!-- Tell the browser to be responsive to screen width -->
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="{% static 'plugins/fontawesome-free/css/all.min.css' %}">
     <!-- icheck bootstrap -->
     <link rel="stylesheet" href="{% static 'plugins/icheck-bootstrap/icheck-bootstrap.min.css' %}">
     <!-- Theme style -->
@@ -98,15 +96,14 @@
     </div>
     <!-- /.login-box -->
 
-    <!-- jQuery -->
-    <script src="{% static 'plugins/jquery/jquery.min.js' %}"></script>
-    <!-- Bootstrap 4 -->
-    <script src="{% static 'plugins/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
-    <!-- Lucide icons -->
+    <!-- jQuery, Bootstrap JS and the AdminLTE widget bundle are all
+         intentionally left off this page - nothing here uses a Bootstrap
+         JS component (modal/dropdown/tooltip), an AdminLTE widget
+         (sidebar/pushmenu/treeview - there's no sidebar on the login
+         page), or jQuery itself. Only Lucide (for the two field icons)
+         and the PWA service-worker registration are needed. -->
     <script src="{% static 'plugins/lucide/lucide.min.js' %}"></script>
     <script>lucide.createIcons({ attrs: { width: 16, height: 16, 'stroke-width': 1.75 } });</script>
-    <!-- AdminLTE App -->
-    <script src="{% static 'dist/js/adminlte.min.js' %}"></script>
     {% include "includes/pwa_register.html" %}
 
 </body>
