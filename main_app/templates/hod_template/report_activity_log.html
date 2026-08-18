@@ -55,7 +55,7 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Type</th><th>Target</th></tr>
+                                    <tr><th>Timestamp</th><th>Actor</th><th>Action</th><th class="d-none d-md-table-cell">Type</th><th>Target</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for log in logs %}
@@ -81,8 +81,8 @@
                                             <span class="badge badge-secondary">{{ log.action|capfirst }}</span>
                                             {% endif %}
                                         </td>
-                                        <td>{{ log.target_model }}</td>
-                                        <td>{{ log.target_repr }}</td>
+                                        <td class="d-none d-md-table-cell">{{ log.target_model }}</td>
+                                        <td class="table-cell-wrap">{{ log.target_repr }}</td>
                                     </tr>
                                     {% empty %}
                                     <tr><td colspan="5" class="text-muted">No activity recorded yet.</td></tr>

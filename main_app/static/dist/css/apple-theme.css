@@ -306,6 +306,16 @@ a:hover { color: var(--accent-active); }
     color: var(--ink) !important;
 }
 
+.btn-outline-primary {
+    color: var(--accent) !important;
+    border: 1px solid var(--accent) !important;
+    background: var(--surface) !important;
+}
+.btn-outline-primary:hover {
+    background: var(--accent-tint) !important;
+    color: var(--accent-active) !important;
+}
+
 .page-item.active .page-link {
     background-color: var(--accent) !important;
     border-color: var(--accent) !important;
@@ -431,6 +441,37 @@ label { font-weight: 600; color: var(--ink); font-size: 13px; }
 .table-hover tbody tr:hover { background-color: var(--surface-sunken); }
 .table-bordered, .table-bordered th, .table-bordered td { border: none !important; }
 .table svg.lucide { width: 14px; height: 14px; vertical-align: -0.15em; }
+
+/* For a column that can hold arbitrary-length free text (an audit log's
+   Target, a leave application's Message, ...) - constrains it to a
+   sane width and wraps instead of letting one long value force the
+   whole table wider than its container. */
+.table-cell-wrap {
+    max-width: 220px;
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* Scroll shadows - a table wider than its .table-responsive box scrolls
+   (that's the intent), but with nothing to hint "there's more this way"
+   it just looks like the content got cut off. These are two edge
+   gradients that only become visible once there's actually unscrolled
+   content on that side: the two solid masks scroll WITH the table
+   content (background-attachment: local) and cover the shadow whenever
+   that edge is flush with the container, while the shadows themselves
+   stay pinned to the container (background-attachment: scroll). */
+.table-responsive {
+    background-image:
+        linear-gradient(to right, var(--surface) 50%, rgba(255, 255, 255, 0) 100%),
+        linear-gradient(to left, var(--surface) 50%, rgba(255, 255, 255, 0) 100%),
+        linear-gradient(to right, rgba(26, 26, 46, 0.10), rgba(26, 26, 46, 0)),
+        linear-gradient(to left, rgba(26, 26, 46, 0.10), rgba(26, 26, 46, 0));
+    background-position: left center, right center, left center, right center;
+    background-repeat: no-repeat;
+    background-color: var(--surface);
+    background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
+    background-attachment: local, local, scroll, scroll;
+}
 
 /* DataTables Responsive's mobile row-expand control (the "+"/"-" circle
    used on manage-list pages once columns start collapsing on narrow

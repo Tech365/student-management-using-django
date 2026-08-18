@@ -89,12 +89,12 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead>
-                                    <tr><th>Class</th><th>Subject</th><th>Student</th><th>Test</th><th>Exam</th></tr>
+                                    <tr><th class="d-none d-md-table-cell">Class</th><th>Subject</th><th>Student</th><th>Test</th><th>Exam</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for result in results %}
                                     <tr>
-                                        <td>{{ result.subject.course.name }}</td>
+                                        <td class="d-none d-md-table-cell">{{ result.subject.course.name }}</td>
                                         <td>{{ result.subject.name }}</td>
                                         <td>{{ result.student }}</td>
                                         <td>{{ result.test }}</td>
