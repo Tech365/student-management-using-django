@@ -272,6 +272,50 @@
         }
         lucide.createIcons({ attrs: { width: 16, height: 16, 'stroke-width': 1.75 } });
 
+        // Sidebar section headers (PEOPLE, ACADEMICS, ...) collapse/expand
+        // on click - the admin sidebar in particular has 7+ of these, and
+        // it was always showing every item in every section at once.
+        // State is per-label (not per-role) and persisted in localStorage
+        // so it survives the full-page navigation every link here does.
+        // Whatever section holds the current page's active link is always
+        // shown expanded on this load, regardless of its stored state, so
+        // navigating somewhere never hides the very link you're on.
+        (function () {
+            var headers = document.querySelectorAll('.nav-sidebar > .nav-header');
+            headers.forEach(function (header) {
+                var group = [];
+                var el = header.nextElementSibling;
+                while (el && !el.classList.contains('nav-header')) {
+                    group.push(el);
+                    el = el.nextElementSibling;
+                }
+                if (!group.length) return;
+
+                var key = 'navGroupCollapsed:' + header.textContent.trim();
+                var hasActive = group.some(function (li) { return li.querySelector('.nav-link.active'); });
+                var collapsed = !hasActive && localStorage.getItem(key) === '1';
+
+                var chevron = document.createElement('i');
+                chevron.setAttribute('data-lucide', 'chevron-down');
+                chevron.className = 'nav-header-chevron';
+                header.appendChild(chevron);
+                header.classList.add('nav-header-toggle');
+
+                function apply() {
+                    group.forEach(function (li) { li.style.display = collapsed ? 'none' : ''; });
+                    header.classList.toggle('is-collapsed', collapsed);
+                }
+                apply();
+
+                header.addEventListener('click', function () {
+                    collapsed = !collapsed;
+                    localStorage.setItem(key, collapsed ? '1' : '0');
+                    apply();
+                });
+            });
+            lucide.createIcons({ attrs: { width: 16, height: 16, 'stroke-width': 1.75 } });
+        })();
+
         $(document).ready(function () {
             $('#sharedConfirmModalOk').on('click', function () {
                 $('#sharedConfirmModal').modal('hide');

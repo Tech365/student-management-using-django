@@ -152,11 +152,16 @@ a:hover { color: var(--accent-active); }
 .main-sidebar .brand-link {
     border-bottom: 1px solid var(--hairline-soft) !important;
     background: transparent !important;
+    padding: 12px 14px !important;
 }
 
 .main-sidebar .brand-text {
     color: var(--ink) !important;
-    font-weight: 700;
+    /* AdminLTE's default here is 1.25rem/20px, which at bold weight sits
+       almost as large as the actual page-title h1 (21px) - a sidebar
+       label shouldn't compete with the page's own heading. */
+    font-size: 15px !important;
+    font-weight: 600;
 }
 
 .main-sidebar .user-panel .info a {
@@ -532,4 +537,41 @@ table.dataTable.dtr-inline.collapsed > tbody > tr.parent > th:first-child:before
 .login-page .input-group-text svg.lucide {
     width: 15px;
     height: 15px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Footer - never had its own size rule, so it was sitting at the browser  */
+/* default (16px) while every other bit of UI text was tightened to        */
+/* ~13.5px, making it read as oversized by comparison.                     */
+/* ---------------------------------------------------------------------- */
+
+.main-footer {
+    font-size: 12.5px;
+    color: var(--ink-tertiary);
+    padding: 10px 18px !important;
+}
+.main-footer a { color: var(--ink-secondary); }
+.main-footer a:hover { color: var(--accent); }
+
+/* ---------------------------------------------------------------------- */
+/* Sidebar nav-header groups - collapsible (see base.html for the JS that  */
+/* groups each header with the nav-items that follow it, toggles them on   */
+/* click, and persists the open/closed state in localStorage per label).   */
+/* ---------------------------------------------------------------------- */
+
+.nav-sidebar > .nav-header.nav-header-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+}
+.nav-header-chevron {
+    width: 13px !important;
+    height: 13px !important;
+    color: var(--ink-tertiary);
+    transition: transform 150ms ease;
+}
+.nav-header-toggle.is-collapsed .nav-header-chevron {
+    transform: rotate(-90deg);
 }
