@@ -34,6 +34,7 @@ from .utils import (all_configured_school_weekdays, csv_response, grant_role,
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
 CHRONIC_ABSENCE_THRESHOLD = 75  # attendance % below this gets flagged in reports
+COMPLIANCE_THRESHOLD = 80  # attendance-*taking* % below this gets flagged in reports
 
 logger = logging.getLogger(__name__)
 
@@ -1740,6 +1741,110 @@ def report_attendance_not_taken_csv(request):
     rows = [(row['course'], row['subject'], row['teacher']) for row in data['not_taken']]
     filename = f"attendance_not_taken_{data['selected_date']}.csv"
     return csv_response(filename, ['Class', 'Subject', 'Teacher'], rows)
+
+
+def _count_school_days(start_date, end_date, school_weekdays):
+    """Count of calendar days in [start_date, end_date] (inclusive, both
+    'YYYY-MM-DD' strings) that fall on a configured school weekday - or
+    every day in range if school_days isn't configured on any session
+    (school_weekdays is None), matching the lenient default used
+    elsewhere (an unconfigured session imposes no restriction)."""
+    start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    if end < start:
+        return 0
+    total_days = (end - start).days + 1
+    if school_weekdays is None:
+        return total_days
+    school_weekdays = set(school_weekdays)
+    count = 0
+    current = start
+    for _ in range(total_days):
+        # JS Date.getDay() convention (Sunday=0) is what school_days is
+        # stored in - Python's date.isoweekday() is Monday=1..Sunday=7,
+        # so %7 turns Sunday's 7 into 0 to match.
+        if current.isoweekday() % 7 in school_weekdays:
+            count += 1
+        current += timedelta(days=1)
+    return count
+
+
+def _attendance_compliance_data(request):
+    course_id = request.GET.get('course') or ''
+    start_date = request.GET.get('start_date') or date.today().replace(day=1).isoformat()
+    end_date = request.GET.get('end_date') or date.today().isoformat()
+
+    subjects = (Subject.objects.select_related('course')
+                .prefetch_related('staff__admin').order_by('course__name', 'name'))
+    if course_id:
+        subjects = subjects.filter(course_id=course_id)
+
+    school_weekdays = all_configured_school_weekdays()
+    expected_days = _count_school_days(start_date, end_date, school_weekdays)
+
+    # Not scoped by Session, same reasoning as Attendance Not Taken - a
+    # subject with attendance taken in any session on a given date already
+    # has something recorded for it that day.
+    taken_by_subject = dict(
+        Attendance.objects.filter(subject__in=subjects, date__gte=start_date, date__lte=end_date)
+        .values('subject_id').annotate(days=Count('date', distinct=True))
+        .values_list('subject_id', 'days')
+    )
+
+    rows = []
+    for subject in subjects:
+        taken = taken_by_subject.get(subject.id, 0)
+        # Cap at 100% - attendance can end up taken on more days than
+        # "expected" if e.g. school_days wasn't configured yet when some
+        # of those dates were recorded, and showing 120% would be worse
+        # than just capping it.
+        percent = round(min(taken, expected_days) / expected_days * 100, 1) if expected_days else None
+        rows.append({
+            'course': subject.course.name,
+            'subject': subject.name,
+            'teacher': ', '.join(str(t) for t in subject.staff.all()) or '—',
+            'expected_days': expected_days,
+            'taken_days': taken,
+            'percent': percent,
+            'flagged': percent is not None and percent < COMPLIANCE_THRESHOLD,
+        })
+    # Worst compliance first, same convention as the chronic-absence
+    # table - a subject with no expected days at all (percent is None)
+    # sorts last, since there's nothing actionable to flag about it.
+    rows.sort(key=lambda r: r['percent'] if r['percent'] is not None else 101)
+
+    return {
+        'course_id': course_id, 'start_date': start_date, 'end_date': end_date,
+        'expected_days': expected_days, 'rows': rows,
+        'school_days_configured': school_weekdays is not None,
+    }
+
+
+def report_attendance_compliance(request):
+    data = _attendance_compliance_data(request)
+    context = {
+        'page_title': 'Attendance-Taking Compliance',
+        'courses': Course.objects.order_by('name'),
+        'selected_course': data['course_id'],
+        'start_date': data['start_date'],
+        'end_date': data['end_date'],
+        'expected_days': data['expected_days'],
+        'rows': data['rows'],
+        'flagged_count': sum(1 for r in data['rows'] if r['flagged']),
+        'school_days_configured': data['school_days_configured'],
+        'compliance_threshold': COMPLIANCE_THRESHOLD,
+    }
+    return render(request, 'hod_template/report_attendance_compliance.html', context)
+
+
+def report_attendance_compliance_csv(request):
+    data = _attendance_compliance_data(request)
+    rows = [(r['course'], r['subject'], r['teacher'], r['expected_days'], r['taken_days'],
+              f"{r['percent']}%" if r['percent'] is not None else 'N/A')
+             for r in data['rows']]
+    filename = f"attendance_compliance_{data['start_date']}_to_{data['end_date']}.csv"
+    return csv_response(
+        filename, ['Class', 'Subject', 'Teacher', 'School Days', 'Days Taken', 'Compliance %'], rows)
 
 
 def report_attendance_summary(request):

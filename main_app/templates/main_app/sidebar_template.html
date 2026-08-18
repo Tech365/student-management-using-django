@@ -192,6 +192,13 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    {% url 'report_attendance_compliance' as report_attendance_compliance %}
+                    <a href="{{report_attendance_compliance}}" class="nav-link {% if report_attendance_compliance == request.path %} active {% endif %}">
+                        <i data-lucide="calendar-check" class="nav-icon text-success"></i>
+                        <p>Attendance Compliance</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     {% url 'report_student_attendance' as report_student_attendance %}
                     <a href="{{report_student_attendance}}" class="nav-link {% if report_student_attendance == request.path %} active {% endif %}">
                         <i data-lucide="chart-line" class="nav-icon text-success"></i>

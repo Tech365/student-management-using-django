@@ -1029,6 +1029,110 @@ class AttendanceNotTakenReportTests(TestCase):
         self.assertRedirects(response, reverse('staff_home'))
 
 
+class AttendanceComplianceReportTests(TestCase):
+    """How reliably attendance is taken over a date range, not just a
+    single day - the "Attendance Not Taken" report's trend-over-time
+    counterpart."""
+
+    def setUp(self):
+        make_admin("report_admin_compliance@example.com")
+        self.client.login(username="report_admin_compliance@example.com", password=PASSWORD)
+        self.course = make_course("Compliance Course")
+        # Mon-Fri (JS Date.getDay() convention: Monday=1..Friday=5) - any
+        # 7 consecutive calendar days contain exactly 5 of these,
+        # regardless of which specific week is used below.
+        self.session = make_session()
+        self.session.school_days = "1,2,3,4,5"
+        self.session.save()
+        self.staff = make_staff("compliance_teacher@example.com", self.course)
+        self.subject = make_subject("Compliance Subject", self.staff, self.course)
+        # A 7-day range: 5 expected school days.
+        self.start_date = "2024-06-01"
+        self.end_date = "2024-06-07"
+
+    def _mark_attendance(self, subject, dates):
+        for d in dates:
+            Attendance.objects.create(session=self.session, subject=subject, date=d)
+
+    def test_expected_days_counts_only_configured_school_weekdays(self):
+        response = self.client.get(reverse('report_attendance_compliance'), {
+            'start_date': self.start_date, 'end_date': self.end_date,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['expected_days'], 5)
+        self.assertTrue(response.context['school_days_configured'])
+
+    def test_low_attendance_taking_is_flagged(self):
+        self._mark_attendance(self.subject, ["2024-06-03", "2024-06-04", "2024-06-05"])
+        response = self.client.get(reverse('report_attendance_compliance'), {
+            'start_date': self.start_date, 'end_date': self.end_date,
+        })
+        row = response.context['rows'][0]
+        self.assertEqual(row['taken_days'], 3)
+        self.assertEqual(row['percent'], 60.0)
+        self.assertTrue(row['flagged'])
+
+    def test_full_attendance_taking_is_not_flagged(self):
+        self._mark_attendance(self.subject, [
+            "2024-06-03", "2024-06-04", "2024-06-05", "2024-06-06", "2024-06-07",
+        ])
+        response = self.client.get(reverse('report_attendance_compliance'), {
+            'start_date': self.start_date, 'end_date': self.end_date,
+        })
+        row = response.context['rows'][0]
+        self.assertEqual(row['percent'], 100.0)
+        self.assertFalse(row['flagged'])
+
+    def test_duplicate_attendance_same_day_counts_once(self):
+        # Two sessions taking attendance for the same subject on the same
+        # day (e.g. a re-take) must not inflate the day count past 1.
+        other_session = make_session()
+        Attendance.objects.create(session=self.session, subject=self.subject, date="2024-06-03")
+        Attendance.objects.create(session=other_session, subject=self.subject, date="2024-06-03")
+        response = self.client.get(reverse('report_attendance_compliance'), {
+            'start_date': self.start_date, 'end_date': self.end_date,
+        })
+        row = response.context['rows'][0]
+        self.assertEqual(row['taken_days'], 1)
+
+    def test_course_filter_scopes_results(self):
+        other_course = make_course("Other Compliance Course")
+        other_staff = make_staff("other_compliance_teacher@example.com", other_course)
+        make_subject("Other Compliance Subject", other_staff, other_course)
+
+        response = self.client.get(reverse('report_attendance_compliance'), {
+            'start_date': self.start_date, 'end_date': self.end_date, 'course': self.course.id,
+        })
+        subjects = [r['subject'] for r in response.context['rows']]
+        self.assertIn('Compliance Subject', subjects)
+        self.assertNotIn('Other Compliance Subject', subjects)
+
+    def test_no_school_days_configured_falls_back_to_every_day(self):
+        self.session.school_days = ""
+        self.session.save()
+        response = self.client.get(reverse('report_attendance_compliance'), {
+            'start_date': self.start_date, 'end_date': self.end_date,
+        })
+        self.assertEqual(response.context['expected_days'], 7)
+        self.assertFalse(response.context['school_days_configured'])
+
+    def test_csv_export_respects_filters(self):
+        self._mark_attendance(self.subject, ["2024-06-03"])
+        response = self.client.get(reverse('report_attendance_compliance_csv'), {
+            'start_date': self.start_date, 'end_date': self.end_date,
+        })
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('Compliance Subject', body)
+        self.assertIn('20.0%', body)
+
+    def test_staff_cannot_reach_it(self):
+        self.client.logout()
+        self.client.login(username="compliance_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('report_attendance_compliance'))
+        self.assertRedirects(response, reverse('staff_home'))
+
+
 class StudentAttendanceReportTests(TestCase):
     def setUp(self):
         make_admin("report_admin_student@example.com")

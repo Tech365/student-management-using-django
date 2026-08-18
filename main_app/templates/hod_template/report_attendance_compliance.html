@@ -1,0 +1,114 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">
+                            How reliably attendance is actually being taken over a stretch of time, not just
+                            today - the number of school days in the chosen range each subject has an
+                            attendance record for. Subjects below {{ compliance_threshold }}% are flagged.
+                        </p>
+                        {% if not school_days_configured %}
+                        <div class="alert alert-warning">
+                            No session has its school days configured yet, so every calendar day in the range
+                            below counts as an expected school day, weekends included. Set a session's school
+                            days (Manage Session) for a more accurate expected-days count.
+                        </div>
+                        {% endif %}
+                        <form method="GET" class="form-inline">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Class</label>
+                                <select name="course" class="form-control">
+                                    <option value="">All Classes</option>
+                                    {% for course in courses %}
+                                    <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">From</label>
+                                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">To</label>
+                                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                            </div>
+                            <button type="submit" class="btn btn-primary mr-2">Filter</button>
+                            <a class="btn btn-outline-secondary"
+                               href="{% url 'report_attendance_compliance_csv' %}?course={{ selected_course }}&start_date={{ start_date }}&end_date={{ end_date }}">
+                                <i data-lucide="download"></i> Export CSV
+                            </a>
+                        </form>
+                    </div>
+                </div>
+
+                {% if expected_days %}
+                <div class="row">
+                    <div class="col-md-4 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-info"><i data-lucide="calendar-days"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">School Days In Range</span>
+                                <span class="info-box-number">{{ expected_days }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-6">
+                        <div class="info-box">
+                            <span class="info-box-icon bg-warning"><i data-lucide="triangle-alert"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Subjects Below {{ compliance_threshold }}%</span>
+                                <span class="info-box-number">{{ flagged_count }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="js-datatable table table-bordered table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Class</th><th>Subject</th><th>Teacher</th>
+                                        <th>School Days</th><th>Days Taken</th><th>Compliance</th><th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in rows %}
+                                    <tr class="{% if row.flagged %}table-danger{% endif %}">
+                                        <td>{{ row.course }}</td>
+                                        <td>{{ row.subject }}</td>
+                                        <td>{{ row.teacher }}</td>
+                                        <td>{{ row.expected_days }}</td>
+                                        <td>{{ row.taken_days }}</td>
+                                        <td>{% if row.percent is not None %}{{ row.percent }}%{% else %}&mdash;{% endif %}</td>
+                                        <td>
+                                            {% if row.flagged %}
+                                            <span class="badge badge-danger">Below {{ compliance_threshold }}%</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="7" class="text-muted">No subjects match these filters.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
