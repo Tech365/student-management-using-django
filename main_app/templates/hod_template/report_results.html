@@ -34,7 +34,7 @@
                             <button type="submit" class="btn btn-primary mr-2">Filter</button>
                             <a class="btn btn-outline-secondary"
                                href="{% url 'report_results_csv' %}?course={{ selected_course }}&subject={{ selected_subject }}">
-                                <i class="fas fa-download"></i> Export CSV
+                                <i data-lucide="download"></i> Export CSV
                             </a>
                         </form>
                     </div>
@@ -44,7 +44,7 @@
                 <div class="row">
                     <div class="col-md-4 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-info"><i class="fas fa-list"></i></span>
+                            <span class="info-box-icon bg-info"><i data-lucide="list"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Results</span>
                                 <span class="info-box-number">{{ summary.count }}</span>
@@ -53,7 +53,7 @@
                     </div>
                     <div class="col-md-4 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-warning"><i class="fas fa-pen"></i></span>
+                            <span class="info-box-icon bg-warning"><i data-lucide="pen"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Average Test</span>
                                 <span class="info-box-number">{{ summary.avg_test }}</span>
@@ -62,7 +62,7 @@
                     </div>
                     <div class="col-md-4 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-success"><i class="fas fa-graduation-cap"></i></span>
+                            <span class="info-box-icon bg-success"><i data-lucide="graduation-cap"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Average Exam</span>
                                 <span class="info-box-number">{{ summary.avg_exam }}</span>

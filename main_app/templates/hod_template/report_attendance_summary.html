@@ -51,7 +51,7 @@
                             <button type="submit" class="btn btn-primary mr-2">Filter</button>
                             <a class="btn btn-outline-secondary"
                                href="{% url 'report_attendance_summary_csv' %}?course={{ selected_course }}&session={{ selected_session }}&subject={{ selected_subject }}&start_date={{ start_date }}&end_date={{ end_date }}">
-                                <i class="fas fa-download"></i> Export CSV
+                                <i data-lucide="download"></i> Export CSV
                             </a>
                         </form>
                     </div>
@@ -97,7 +97,7 @@
                         <div class="card-tools">
                             <a class="btn btn-outline-secondary btn-sm"
                                href="{% url 'report_attendance_by_subject_csv' %}?course={{ selected_course }}&session={{ selected_session }}&subject={{ selected_subject }}&start_date={{ start_date }}&end_date={{ end_date }}">
-                                <i class="fas fa-download"></i> Export CSV
+                                <i data-lucide="download"></i> Export CSV
                             </a>
                         </div>
                     </div>
@@ -160,7 +160,7 @@
                         <div class="card-tools">
                             <a class="btn btn-outline-secondary btn-sm"
                                href="{% url 'report_attendance_by_student_csv' %}?course={{ selected_course }}&session={{ selected_session }}&subject={{ selected_subject }}&start_date={{ start_date }}&end_date={{ end_date }}">
-                                <i class="fas fa-download"></i> Export CSV
+                                <i data-lucide="download"></i> Export CSV
                             </a>
                         </div>
                     </div>

@@ -1,54 +1,55 @@
 /*
- * Apple-inspired reskin - Phase 1 pilot (login page + Admin dashboard/chrome).
+ * App theme - Stripe-Dashboard-inspired (phase 2, supersedes the earlier
+ * Apple-HIG pilot after user feedback that the CSS-only Apple pass still
+ * read as generic/templated). Still a CSS-only overlay loaded after
+ * adminlte.min.css and every plugin stylesheet - it never touches template
+ * markup logic, only how the existing AdminLTE/Bootstrap 4 components look.
  *
- * This is a CSS-only overlay loaded after adminlte.min.css and every plugin
- * stylesheet - it never touches template markup or app logic, only how the
- * existing AdminLTE/Bootstrap 4 components look. That's a deliberate scope
- * choice: reskin, not rebuild (see the SaaS Readiness Audit's UI section).
- *
- * Design tokens follow Apple's Human Interface Guidelines vocabulary:
- * a neutral, restrained palette; one accent color used sparingly; the
- * system font stack (resolves to San Francisco on Apple devices, and to
- * each platform's own native UI font everywhere else - never a webfont
- * masquerading as SF, which Apple's own licensing doesn't allow off-device
- * anyway); generous spacing; soft, barely-there elevation instead of hard
- * borders and drop shadows.
+ * What changed from the Apple pass: a real UI grotesk (Inter) instead of
+ * the system font stack; hairline borders on cards/tables instead of soft
+ * shadows (shadows now reserved for genuinely-elevated surfaces - modals,
+ * the login card, dropdowns); a single confident indigo accent instead of
+ * iOS blue; a tighter, more deliberate spacing scale; tabular figures for
+ * numeric stats. The icon system also moved off FontAwesome to Lucide
+ * (consistent thin-stroke SVGs - see base.html/login.html for the loader
+ * and individual templates for the data-lucide markup) since mixed
+ * solid/regular icon weights were the one thing a stylesheet alone
+ * couldn't fix.
  */
 
 :root {
-    --canvas: #F5F5F7;
+    --canvas: #F6F6F8;
     --surface: #FFFFFF;
-    --surface-sunken: #FAFAFA;
-    --ink: #1D1D1F;
-    --ink-secondary: #6E6E73;
-    --ink-tertiary: #86868B;
-    --hairline: #D2D2D7;
-    --hairline-soft: #E5E5E7;
+    --surface-sunken: #FAFAFB;
+    --ink: #1A1A2E;
+    --ink-secondary: #5B5B6B;
+    --ink-tertiary: #8A8A99;
+    --hairline: #E1E1E8;
+    --hairline-soft: #EBEBF1;
 
-    --accent: #0071E3;
-    --accent-hover: #0077ED;
-    --accent-active: #0060C6;
-    --accent-tint: #E8F1FC;
+    --accent: #5851E8;
+    --accent-hover: #4B44D6;
+    --accent-active: #3E38B8;
+    --accent-tint: #EEEDFD;
 
-    --good: #1F8A46;
-    --good-tint: #E6F6EC;
+    --good: #1B8A5A;
+    --good-tint: #E5F6EE;
     --warn: #B25E00;
     --warn-tint: #FBEEDD;
-    --bad: #D70015;
-    --bad-tint: #FCE7E9;
-    --neutral-badge: #6E6E73;
-    --neutral-tint: #F0F0F2;
+    --bad: #D3282C;
+    --bad-tint: #FCEAEA;
+    --neutral-badge: #5B5B6B;
+    --neutral-tint: #EFEFF3;
 
-    --radius-lg: 16px;
-    --radius-md: 12px;
-    --radius-sm: 8px;
-    --radius-xs: 6px;
+    --radius-lg: 10px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
+    --radius-xs: 5px;
 
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.06);
-    --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.10);
+    --shadow-pop: 0 2px 6px rgba(26, 26, 46, 0.06), 0 12px 32px rgba(26, 26, 46, 0.10);
 
-    --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-        "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    --font-system: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
 /* ---------------------------------------------------------------------- */
@@ -68,6 +69,19 @@ body,
     background-color: var(--canvas) !important;
 }
 
+/* Lucide icons default to a fixed 24x24 SVG (sized via width/height
+   attributes, not font-size like the FontAwesome glyphs they replaced) -
+   base.html/login.html hand every icon a 16px default at creation time via
+   createIcons(), this just makes it sit inline with surrounding text the
+   way an icon font used to. Context-specific selectors elsewhere in this
+   file (.nav-icon, .small-box .icon, .btn, .table, ...) override the size
+   where 16px isn't right for that spot. */
+svg.lucide {
+    display: inline-block;
+    vertical-align: -0.2em;
+    flex-shrink: 0;
+}
+
 h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-system);
     font-weight: 600;
@@ -76,7 +90,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .content-header h1 {
-    font-size: 24px;
+    font-size: 21px;
     font-weight: 700;
 }
 
@@ -84,8 +98,17 @@ a { color: var(--accent); }
 a:hover { color: var(--accent-active); }
 
 :focus-visible {
-    outline: 3px solid rgba(0, 113, 227, 0.35);
+    outline: 3px solid rgba(88, 81, 232, 0.35);
     outline-offset: 2px;
+}
+
+/* Numeric columns (stat cards, table figures, IDs) read like data in a
+   dashboard, not prose - tabular figures keep digits aligned in a column
+   instead of each row's total width wobbling with which digits it has. */
+.small-box h3,
+.info-box-number,
+.table {
+    font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -154,7 +177,8 @@ a:hover { color: var(--accent-active); }
     color: var(--ink) !important;
     border-radius: var(--radius-sm);
     margin: 1px 8px;
-    padding: 9px 12px !important;
+    padding: 7px 10px !important;
+    font-size: 13.5px;
     transition: background-color 120ms ease;
 }
 
@@ -164,8 +188,9 @@ a:hover { color: var(--accent-active); }
 
 .main-sidebar .nav-sidebar .nav-link .nav-icon {
     color: var(--ink-tertiary) !important;
-    width: 22px;
-    font-size: 15px;
+    width: 17px;
+    height: 17px;
+    margin-right: 4px;
 }
 
 /* Per-row icon color, same idea as the original template (each section
@@ -201,35 +226,35 @@ a:hover { color: var(--accent-active); }
 /* ---------------------------------------------------------------------- */
 
 .card {
-    border: none !important;
+    border: 1px solid var(--hairline) !important;
     border-radius: var(--radius-lg) !important;
-    box-shadow: var(--shadow-card) !important;
+    box-shadow: none !important;
     background: var(--surface);
 }
 
 .card.card-primary,
 .card.card-secondary {
-    border-top: none !important;
+    border-top: 1px solid var(--hairline) !important;
 }
 
 .card-header {
     background: transparent !important;
-    border-bottom: 1px solid var(--hairline-soft) !important;
+    border-bottom: 1px solid var(--hairline) !important;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
-    padding: 18px 22px !important;
+    padding: 14px 18px !important;
 }
 
 .card-header .card-title {
-    font-size: 17px;
-    font-weight: 700;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--ink);
 }
 
-.card-body { padding: 22px !important; }
+.card-body { padding: 18px !important; }
 .card-footer {
     background: transparent !important;
-    border-top: 1px solid var(--hairline-soft) !important;
-    padding: 16px 22px !important;
+    border-top: 1px solid var(--hairline) !important;
+    padding: 12px 18px !important;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -239,12 +264,15 @@ a:hover { color: var(--accent-active); }
 .btn {
     border-radius: var(--radius-sm) !important;
     font-weight: 600;
+    font-size: 13.5px;
     border: none;
-    padding: 8px 18px;
+    padding: 7px 15px;
     transition: background-color 120ms ease, transform 60ms ease;
     box-shadow: none !important;
 }
 .btn:active { transform: scale(0.98); }
+
+.btn svg.lucide { width: 14px; height: 14px; vertical-align: -0.15em; }
 
 .btn-primary {
     background-color: var(--accent) !important;
@@ -287,37 +315,42 @@ a:hover { color: var(--accent-active); }
 
 .small-box {
     background: var(--surface) !important;
+    border: 1px solid var(--hairline) !important;
     border-radius: var(--radius-lg) !important;
-    box-shadow: var(--shadow-card) !important;
+    box-shadow: none !important;
     color: var(--ink) !important;
     padding: 4px;
 }
-.small-box > .inner { padding: 20px 22px 8px; }
+.small-box > .inner { padding: 16px 18px 6px; }
 .small-box h3 {
     color: var(--ink) !important;
-    font-size: 30px;
+    font-size: 26px;
     font-weight: 700;
     margin-bottom: 2px;
 }
 .small-box p {
     color: var(--ink-secondary) !important;
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 500;
 }
 .small-box .icon {
-    top: 18px;
-    right: 20px;
-    font-size: 44px;
+    top: 16px;
+    right: 18px;
     opacity: 1;
-    width: 48px;
-    height: 48px;
+    width: 42px;
+    height: 42px;
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 .small-box .icon i {
-    font-size: 20px !important;
+    font-size: 18px !important;
+    position: static !important;
+}
+.small-box .icon svg.lucide {
+    width: 19px;
+    height: 19px;
     position: static !important;
 }
 .small-box.bg-info .icon      { background: var(--accent-tint); color: var(--accent) !important; }
@@ -336,6 +369,11 @@ a:hover { color: var(--accent-active); }
 }
 .small-box-footer:hover { color: var(--accent) !important; }
 
+.info-box-icon svg.lucide {
+    width: 26px;
+    height: 26px;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Forms                                                                    */
 /* ---------------------------------------------------------------------- */
@@ -345,7 +383,8 @@ select.form-control,
 textarea.form-control {
     border: 1px solid var(--hairline) !important;
     border-radius: var(--radius-sm) !important;
-    padding: 9px 13px !important;
+    padding: 8px 12px !important;
+    font-size: 13.5px;
     background: var(--surface) !important;
     color: var(--ink);
     box-shadow: none !important;
@@ -357,23 +396,28 @@ textarea.form-control {
 .form-control:disabled, .form-control[readonly] {
     background: var(--surface-sunken) !important;
 }
-label { font-weight: 600; color: var(--ink); font-size: 14px; }
+label { font-weight: 600; color: var(--ink); font-size: 13px; }
 
 /* ---------------------------------------------------------------------- */
 /* Tables / DataTables                                                     */
 /* ---------------------------------------------------------------------- */
 
+.table {
+    font-size: 13.5px;
+}
 .table th {
     color: var(--ink-tertiary);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
+    padding: 10px 12px !important;
     border-top: none !important;
-    border-bottom: 1px solid var(--hairline-soft) !important;
+    border-bottom: 1px solid var(--hairline) !important;
     background: transparent;
 }
 .table td {
+    padding: 10px 12px !important;
     border-top: none !important;
     border-bottom: 1px solid var(--hairline-soft) !important;
     color: var(--ink);
@@ -381,6 +425,7 @@ label { font-weight: 600; color: var(--ink); font-size: 14px; }
 }
 .table-hover tbody tr:hover { background-color: var(--surface-sunken); }
 .table-bordered, .table-bordered th, .table-bordered td { border: none !important; }
+.table svg.lucide { width: 14px; height: 14px; vertical-align: -0.15em; }
 
 /* ---------------------------------------------------------------------- */
 /* Alerts, badges                                                          */
@@ -419,9 +464,16 @@ label { font-weight: 600; color: var(--ink); font-size: 14px; }
 .login-card-body {
     border-radius: var(--radius-lg) !important;
     box-shadow: var(--shadow-pop) !important;
-    padding: 32px 30px !important;
+    padding: 28px 28px !important;
 }
-.login-page .card { box-shadow: none !important; }
+/* The login card is the one deliberately "elevated" surface in the app -
+   everywhere else uses a flat hairline border, but a border stacked on
+   top of this shadow reads as a muddy double outline, so it stays
+   shadow-only. */
+.login-page .card {
+    border: none !important;
+    box-shadow: none !important;
+}
 .login-box-msg {
     color: var(--ink-secondary);
     font-size: 14px;
@@ -435,4 +487,8 @@ label { font-weight: 600; color: var(--ink); font-size: 14px; }
 }
 .login-page .form-control {
     border-right: none !important;
+}
+.login-page .input-group-text svg.lucide {
+    width: 15px;
+    height: 15px;
 }

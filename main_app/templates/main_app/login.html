@@ -16,9 +16,11 @@
     <link rel="stylesheet" href="{% static 'plugins/icheck-bootstrap/icheck-bootstrap.min.css' %}">
     <!-- Theme style -->
     <link rel="stylesheet" href="{% static 'dist/css/adminlte.min.css' %}">
-    <!-- Google Font: Source Sans Pro -->
-    <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700" rel="stylesheet">
-    <!-- Apple-inspired reskin pilot - see the file's own header comment -->
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <!-- App theme (Stripe-Dashboard-inspired) - see the file's own header comment -->
     <link rel="stylesheet" href="{% static 'dist/css/apple-theme.css' %}">
     {% include "includes/pwa_meta.html" %}
 </head>
@@ -50,7 +52,7 @@
                         <input required type="email" name='email' class="form-control" placeholder="Email">
                         <div class="input-group-append">
                             <div class="input-group-text">
-                                <span class="fas fa-envelope"></span>
+                                <i data-lucide="mail"></i>
                             </div>
                         </div>
                     </div>
@@ -58,7 +60,7 @@
                         <input required type="password" name='password' class="form-control" placeholder="Password">
                         <div class="input-group-append">
                             <div class="input-group-text">
-                                <span class="fas fa-lock"></span>
+                                <i data-lucide="lock"></i>
                             </div>
                         </div>
                     </div>
@@ -102,6 +104,9 @@
     <script src="{% static 'plugins/jquery/jquery.min.js' %}"></script>
     <!-- Bootstrap 4 -->
     <script src="{% static 'plugins/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
+    <!-- Lucide icons -->
+    <script src="{% static 'plugins/lucide/lucide.min.js' %}"></script>
+    <script>lucide.createIcons({ attrs: { width: 16, height: 16, 'stroke-width': 1.75 } });</script>
     <!-- AdminLTE App -->
     <script src="{% static 'dist/js/adminlte.min.js' %}"></script>
     {% include "includes/pwa_register.html" %}

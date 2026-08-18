@@ -188,12 +188,17 @@
                 var leave_badge = on_leave ? " <span class='badge badge-warning'>On Leave</span>" : ""
                 var avatar = json_data[key]['profile_pic']
                     ? "<img class='roster-avatar' src='" + json_data[key]['profile_pic'] + "' alt=''>"
-                    : "<i class='fas fa-user-circle roster-avatar' style='font-size:32px;color:#ccc;'></i>"
+                    : "<i data-lucide='user-circle' class='roster-avatar' style='width:32px;height:32px;color:#ccc;'></i>"
                 div_data += "<div class='col-lg-3 roster-item'><div class='form-check custom-control custom-checkbox'><input type='checkbox' class='custom-control-input' " + checked_attr + " " + disabled_attr + " name='student_data[]' value=" + json_data[key]['id'] + " id='checkbox" + json_data[key]['id'] + "' /> <label for='checkbox" + json_data[key]['id'] + "' class='custom-control-label'>" + avatar + json_data[key]['name'] + leave_badge + "</label></div> </div>"
             }
             div_data += "</div>"
             div_data += "<div class='form-group mt-2'><button id='save_attendance' class='btn btn-success' type='button'>Save Attendance</button></div>"
             $("#student_data").html(div_data)
+            // Roster avatars for students with no photo are rendered as
+            // data-lucide markup above - this dynamically-inserted content
+            // needs its own createIcons() pass (the one at page load only
+            // sees icons present in the initial HTML).
+            lucide.createIcons({ attrs: { 'stroke-width': 1.75 } })
         }
 
         function fetchStudents() {

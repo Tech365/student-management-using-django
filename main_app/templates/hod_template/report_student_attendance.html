@@ -34,7 +34,7 @@
                             {% if selected_student %}
                             <a class="btn btn-outline-secondary"
                                href="{% url 'report_student_attendance_csv' %}?student={{ selected_student }}&start_date={{ start_date }}&end_date={{ end_date }}">
-                                <i class="fas fa-download"></i> Export CSV
+                                <i data-lucide="download"></i> Export CSV
                             </a>
                             {% endif %}
                         </form>
@@ -45,7 +45,7 @@
                 <div class="row">
                     <div class="col-md-3 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-info"><i class="fas fa-clipboard-check"></i></span>
+                            <span class="info-box-icon bg-info"><i data-lucide="clipboard-check"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Attendance %</span>
                                 <span class="info-box-number">{{ summary.percent }}%</span>
@@ -54,7 +54,7 @@
                     </div>
                     <div class="col-md-3 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-success"><i class="fas fa-check"></i></span>
+                            <span class="info-box-icon bg-success"><i data-lucide="check"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Present</span>
                                 <span class="info-box-number">{{ summary.present }}</span>
@@ -63,7 +63,7 @@
                     </div>
                     <div class="col-md-3 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-danger"><i class="fas fa-times"></i></span>
+                            <span class="info-box-icon bg-danger"><i data-lucide="x"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Absent</span>
                                 <span class="info-box-number">{{ summary.absent }}</span>
@@ -72,7 +72,7 @@
                     </div>
                     <div class="col-md-3 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-warning"><i class="fas fa-user-clock"></i></span>
+                            <span class="info-box-icon bg-warning"><i data-lucide="clock-alert"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Leave</span>
                                 <span class="info-box-number">{{ summary.leave }}</span>
@@ -81,7 +81,7 @@
                     </div>
                     <div class="col-md-3 col-6">
                         <div class="info-box">
-                            <span class="info-box-icon bg-secondary"><i class="fas fa-list"></i></span>
+                            <span class="info-box-icon bg-secondary"><i data-lucide="list"></i></span>
                             <div class="info-box-content">
                                 <span class="info-box-text">Total Records</span>
                                 <span class="info-box-number">{{ summary.total }}</span>
