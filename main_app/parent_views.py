@@ -7,6 +7,7 @@ from django.contrib.auth import update_session_auth_hash
 from django.core.files.storage import FileSystemStorage
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.templatetags.static import static
 from django.urls import reverse
 
 from .forms import (LeaveReportStudentForm, ParentEditForm,
@@ -44,7 +45,11 @@ def parent_register(request):
             password = reg_form.cleaned_data.get('password')
             contact_number = reg_form.cleaned_data.get('contact_number')
             passport = request.FILES.get('profile_pic')
-            passport_url = DEFAULT_PROFILE_PIC
+            # static(), not the bare DEFAULT_PROFILE_PIC constant - that's
+            # just the relative path, which resolves against whatever page
+            # it's later rendered on (broken depending on URL depth) rather
+            # than the actual /static/... URL a browser can load.
+            passport_url = static(DEFAULT_PROFILE_PIC)
             if passport is not None:
                 fs = FileSystemStorage()
                 filename = fs.save(passport.name, passport)

@@ -1684,6 +1684,18 @@ class ParentFeatureTests(TestCase):
         link = ParentStudentLink.objects.get(parent=user.parent, student=self.student)
         self.assertEqual(link.status, 0)
 
+    def test_registration_without_a_photo_gets_a_loadable_default_avatar(self):
+        # Regression test: this used to set profile_pic to the bare
+        # relative path 'dist/img/default-150x150.png' (missing
+        # static()'s /static/ prefix), which resolves against whatever
+        # page it's later rendered on instead of the site root - broken
+        # depending on how deep that page's URL is, not just "no photo".
+        response = self._register_parent()
+        self.assertEqual(response.status_code, 302)
+        user = CustomUser.objects.get(email="new_parent@example.com")
+        profile_pic = str(user.profile_pic)
+        self.assertTrue(profile_pic.startswith('/'), profile_pic)
+
     def test_registration_page_get_renders_single_child_form_by_default(self):
         # Regression test: formset_factory's total form count is
         # max(initial_form_count(), min_num) + extra, so extra=1 alongside
@@ -2703,3 +2715,35 @@ class AttendanceNotTakenSchoolDaysTests(TestCase):
         make_session()
         response = self.client.get(reverse('report_attendance_not_taken'))
         self.assertEqual(response.context['school_weekdays_json'], 'null')
+
+
+class AvatarUrlFilterTests(TestCase):
+    """templatetags.main_app_extras.avatar_url - every place a profile
+    photo is rendered goes through this instead of the raw field, so a
+    missing or malformed value never produces a broken <img src>."""
+
+    def test_empty_value_falls_back_to_default(self):
+        from main_app.templatetags.main_app_extras import avatar_url
+        self.assertEqual(avatar_url(''), '/static/dist/img/default-150x150.png')
+        self.assertEqual(avatar_url(None), '/static/dist/img/default-150x150.png')
+
+    def test_valid_static_path_passes_through(self):
+        from main_app.templatetags.main_app_extras import avatar_url
+        self.assertEqual(avatar_url('/static/dist/img/default-150x150.png'),
+                          '/static/dist/img/default-150x150.png')
+
+    def test_valid_media_upload_path_passes_through(self):
+        from main_app.templatetags.main_app_extras import avatar_url
+        self.assertEqual(avatar_url('/media/uploaded_photo.jpg'), '/media/uploaded_photo.jpg')
+
+    def test_full_url_passes_through(self):
+        from main_app.templatetags.main_app_extras import avatar_url
+        self.assertEqual(avatar_url('https://example.com/photo.jpg'), 'https://example.com/photo.jpg')
+
+    def test_bare_relative_path_falls_back_to_default(self):
+        # The exact bug pattern from parent_register before the fix -
+        # missing leading "/", would resolve relative to the current
+        # page instead of the site root.
+        from main_app.templatetags.main_app_extras import avatar_url
+        self.assertEqual(avatar_url('dist/img/default-150x150.png'),
+                          '/static/dist/img/default-150x150.png')
