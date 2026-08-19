@@ -138,23 +138,50 @@
             disable: [],
         })
 
+        // Take Attendance only reaches back to the single most recently
+        // elapsed school day - anything older goes through Update
+        // Attendance instead. Mirrors main_app.utils.latest_school_day
+        // server-side, which is the real enforcement; this is just the
+        // matching UX so a teacher never sees a date rejected after
+        // picking it.
+        function computeFloorDate(schoolDaysStr) {
+            var today = new Date()
+            today.setHours(0, 0, 0, 0)
+            if (!schoolDaysStr) return today
+            var allowed = schoolDaysStr.split(",").map(Number)
+            var candidate = new Date(today)
+            for (var i = 0; i < 7; i++) {
+                if (allowed.indexOf(candidate.getDay()) !== -1) return candidate
+                candidate.setDate(candidate.getDate() - 1)
+            }
+            return today
+        }
+
         function updateDatePickerRestriction() {
             var sessionId = $("#session").val()
             var schoolDays = sessionId
                 ? ($("#all-sessions option[value='" + sessionId + "']").data("schooldays") + "").trim()
                 : ""
-            if (!schoolDays) {
+            if (!sessionId) {
                 datePicker.set('disable', [])
+                datePicker.set('minDate', null)
                 return
             }
-            var allowed = schoolDays.split(",").map(Number)
-            datePicker.set('disable', [function (date) {
+            var floor = computeFloorDate(schoolDays)
+            datePicker.set('minDate', floor)
+            var allowed = schoolDays ? schoolDays.split(",").map(Number) : null
+            datePicker.set('disable', allowed ? [function (date) {
                 return allowed.indexOf(date.getDay()) === -1
-            }])
-            // A date picked before narrowing the session down no longer
-            // being valid shouldn't silently stay selected.
-            if (datePicker.selectedDates.length && allowed.indexOf(datePicker.selectedDates[0].getDay()) === -1) {
-                datePicker.clear()
+            }] : [])
+            // A date picked before narrowing the session down (or before
+            // today's floor moved forward) shouldn't silently stay
+            // selected if it's no longer valid.
+            if (datePicker.selectedDates.length) {
+                var selected = datePicker.selectedDates[0]
+                var validWeekday = !allowed || allowed.indexOf(selected.getDay()) !== -1
+                if (selected < floor || !validWeekday) {
+                    datePicker.clear()
+                }
             }
         }
         $("#session").on("change", updateDatePickerRestriction)
@@ -216,7 +243,8 @@
             }).done(function (response) {
                 renderRoster(JSON.parse(response))
             }).fail(function (response) {
-                notifyUser("Error fetching students", "error")
+                var msg = (response.responseJSON && response.responseJSON.error) || "Error fetching students"
+                notifyUser(msg, "error")
             })
         }
 

@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 
 from django.contrib import messages
 from django.core.files.storage import FileSystemStorage
@@ -15,7 +16,7 @@ from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      Student, StudentResult, Subject)
 from .utils import (notify_student_leave_decision, paginate,
                     send_notification_email, session_course_ids_map,
-                    teacher_course_ids)
+                    take_attendance_date_error, teacher_course_ids)
 
 logger = logging.getLogger(__name__)
 
@@ -51,22 +52,31 @@ def staff_home(request):
     return render(request, 'staff_template/home_content.html', context)
 
 
-def staff_take_attendance(request):
-    staff = get_object_or_404(Staff, admin=request.user)
+def _staff_class_context(staff):
+    """Class/Subject/Session dropdown data shared by the Take/View/Update
+    Attendance screens - each renders the same three cascading selects,
+    just wired to different fetch endpoints."""
     subjects = Subject.objects.filter(staff=staff).select_related('course')
     courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
     sessions = Session.objects.all()
     session_courses = session_course_ids_map()
     for session in sessions:
         session.course_ids_str = ' '.join(str(c) for c in session_courses.get(session.id, []))
-    context = {
-        'subjects': subjects,
-        'courses': courses,
-        'sessions': sessions,
-        'page_title': 'Take Attendance'
-    }
+    return {'subjects': subjects, 'courses': courses, 'sessions': sessions}
 
+
+def staff_take_attendance(request):
+    staff = get_object_or_404(Staff, admin=request.user)
+    context = _staff_class_context(staff)
+    context['page_title'] = 'Take Attendance'
     return render(request, 'staff_template/staff_take_attendance.html', context)
+
+
+def staff_view_attendance(request):
+    staff = get_object_or_404(Staff, admin=request.user)
+    context = _staff_class_context(staff)
+    context['page_title'] = 'View Attendance'
+    return render(request, 'staff_template/staff_view_attendance.html', context)
 
 
 def _approved_leave_student_ids(students, attendance_date):
@@ -94,6 +104,12 @@ def get_students(request):
         # staff=<instance> as an "is one of this subject's teachers" test.
         subject = get_object_or_404(Subject, id=subject_id, staff=staff)
         session = get_object_or_404(Session, id=session_id)
+
+        date_obj = datetime.strptime(attendance_date, "%Y-%m-%d").date()
+        date_error = take_attendance_date_error(session, date_obj)
+        if date_error:
+            return JsonResponse({'error': date_error}, status=400)
+
         students = Student.objects.filter(
             course_id=subject.course.id, session=session)
         on_leave_ids = _approved_leave_student_ids(students, attendance_date)
@@ -147,6 +163,10 @@ def save_attendance(request):
         # for a class they don't teach by submitting another subject_id.
         subject = get_object_or_404(Subject, id=subject_id, staff=staff)
 
+        date_obj = datetime.strptime(date, "%Y-%m-%d").date()
+        if take_attendance_date_error(session, date_obj):
+            return HttpResponse("False")
+
         # Check if an attendance object already exists for the given date and session
         attendance, created = Attendance.objects.get_or_create(session=session, subject=subject, date=date)
         # Whoever most recently saved it - lets a co-teacher see who took
@@ -184,19 +204,8 @@ def save_attendance(request):
 
 def staff_update_attendance(request):
     staff = get_object_or_404(Staff, admin=request.user)
-    subjects = Subject.objects.filter(staff=staff)
-    courses = Course.objects.filter(id__in=subjects.values_list('course_id', flat=True)).order_by('name')
-    sessions = Session.objects.all()
-    session_courses = session_course_ids_map()
-    for session in sessions:
-        session.course_ids_str = ' '.join(str(c) for c in session_courses.get(session.id, []))
-    context = {
-        'subjects': subjects,
-        'courses': courses,
-        'sessions': sessions,
-        'page_title': 'Update Attendance'
-    }
-
+    context = _staff_class_context(staff)
+    context['page_title'] = 'Update Attendance'
     return render(request, 'staff_template/staff_update_attendance.html', context)
 
 

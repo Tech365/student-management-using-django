@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import logging
+from datetime import date, timedelta
 
 import requests
 from django.conf import settings
@@ -327,6 +328,53 @@ def all_configured_school_weekdays():
     for value in configured:
         days.update(int(d) for d in value.split(',') if d)
     return sorted(days)
+
+
+def _js_weekday(date_obj):
+    # Python's date.weekday() is Monday=0..Sunday=6; convert to JS
+    # Date.getDay()'s Sunday=0..Saturday=6, matching Session.WEEKDAYS and
+    # the client-side flatpickr disable logic in staff_take_attendance.html.
+    return (date_obj.weekday() + 1) % 7
+
+
+def is_school_day(session, date_obj):
+    """True if `date_obj` falls on one of `session`'s configured
+    school_days, or unconditionally True when school_days is blank
+    (unrestricted, the default before this field existed)."""
+    if not session.school_days:
+        return True
+    allowed = {int(d) for d in session.school_days.split(',') if d}
+    return _js_weekday(date_obj) in allowed
+
+
+def latest_school_day(session, today=None):
+    """Most recent date on/before `today` that's a valid school day for
+    `session` - the floor Take Attendance enforces, so a teacher can
+    always catch up on the single most recently missed school day (or
+    take it early, for a future one), but can't reach further back than
+    that from this screen. Blank school_days (unrestricted) means every
+    day counts, so this is just `today` itself."""
+    today = today or date.today()
+    candidate = today
+    for _ in range(7):
+        if is_school_day(session, candidate):
+            return candidate
+        candidate -= timedelta(days=1)
+    return today  # unreachable - a non-empty school_days always matches within a week
+
+
+def take_attendance_date_error(session, date_obj):
+    """None if `date_obj` is acceptable for the Take Attendance screen;
+    otherwise a user-facing reason it isn't. Server-side backstop for the
+    same rule the client already enforces via flatpickr's minDate/disable
+    (see staff_take_attendance.html) - nothing server-side validated this
+    before, so a forged/replayed request could take attendance for any
+    date at all."""
+    if not is_school_day(session, date_obj):
+        return "That date isn't a school day for the selected session."
+    if date_obj < latest_school_day(session):
+        return "That date is too far in the past for Take Attendance - use Update Attendance to correct an older record."
+    return None
 
 
 def session_course_ids_map():

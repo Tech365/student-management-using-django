@@ -133,6 +133,8 @@ urlpatterns = [
          name='staff_view_profile'),
     path("staff/attendance/take/", staff_views.staff_take_attendance,
          name='staff_take_attendance'),
+    path("staff/attendance/view/", staff_views.staff_view_attendance,
+         name='staff_view_attendance'),
     path("staff/attendance/update/", staff_views.staff_update_attendance,
          name='staff_update_attendance'),
     path("staff/get_students/", staff_views.get_students, name='get_students'),

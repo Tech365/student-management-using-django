@@ -1,0 +1,192 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+{% block content %}
+
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <!-- general form elements -->
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+
+                    <!-- /.card-header -->
+                    <div class="card-body">
+
+                        <div class="form-group">
+                            <label>Class</label>
+                            <select name="course" class="form-control" id='course'>
+                                <option value="">----</option>
+                                {% for course in courses %}
+                                <option value="{{course.id}}">{{course.name}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Subject</label>
+                            <select name="subject" class="form-control" id='subject' disabled>
+                                <option value="">Select a class first</option>
+                            </select>
+                            <select id='all-subjects' style="display:none;">
+                                {% for subject in subjects %}
+                                <option value="{{subject.id}}" data-course="{{subject.course_id}}">{{subject.name}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Session</label>
+                            <select name="session" class="form-control" id='session' disabled>
+                                <option value="">Select a class first</option>
+                            </select>
+                            <select id='all-sessions' style="display:none;">
+                                {% for session in sessions %}
+                                <option value="{{session.id}}" data-courses="{{session.course_ids_str}}">{{session}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <div style="display: none;" class="alert alert-danger" id='error_attendance'></div>
+                            <button type="button" id='fetch_attendance' class="btn btn-primary btn-block">Fetch
+                                Attendance</button>
+                        </div>
+                        <!-- /.card-body -->
+
+                        <div class="form-group" style="display: none;" id="attendance_block">
+                            <div class="form-group">
+                                <label>Attendance Date</label>
+                                <select name="attendance_date" id='attendance_date' class="form-control">
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <div id="fetch_student_block" style="display: none;">
+                                    <button type="button" id='fetch_student' class="btn btn-primary btn-block">View
+                                        Students</button>
+                                </div>
+                                <div id='student_data' class="card-footer"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- /.card -->
+
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
+
+
+{% block custom_js %}
+<script>
+    $(document).ready(function () {
+        $("#course").change(function () {
+            var course = $(this).val()
+            var subjectSelect = $("#subject")
+            var sessionSelect = $("#session")
+            if (course.length == 0) {
+                subjectSelect.html('<option value="">Select a class first</option>')
+                subjectSelect.prop("disabled", true)
+                sessionSelect.html('<option value="">Select a class first</option>')
+                sessionSelect.prop("disabled", true)
+                return
+            }
+            subjectSelect.html('<option value="">----</option>')
+            $("#all-subjects option[data-course='" + course + "']").each(function () {
+                subjectSelect.append($("<option>").val($(this).val()).text($(this).text()))
+            })
+            subjectSelect.prop("disabled", false)
+
+            sessionSelect.html('<option value="">----</option>')
+            $("#all-sessions option").each(function () {
+                var courseIds = ($(this).data("courses") + "").split(" ")
+                if (courseIds.indexOf(course) !== -1) {
+                    sessionSelect.append($("<option>").val($(this).val()).text($(this).text()))
+                }
+            })
+            sessionSelect.prop("disabled", false)
+        })
+
+        $("#fetch_attendance").click(function () {
+            var course = $("#course").val()
+            var subject = $("#subject").val()
+            var session = $("#session").val()
+            if (course.length < 1 || session.length < 1 || subject.length < 1) {
+                $("#error_attendance").html("Kindly choose class, subject and session")
+                $("#attendance_block").hide()
+                $("#error_attendance").show()
+                return false
+            }
+            $.ajax({
+                url: "{% url 'get_attendance' %}",
+                type: 'POST',
+                data: { subject: subject, session: session }
+            }).done(function (response) {
+                var json_data = JSON.parse(response)
+                if (json_data.length > 0) {
+                    var html = ""
+                    for (key in json_data) {
+                        html += "<option value='" + json_data[key]['id'] + "'>" + json_data[key]['attendance_date'] + "</option>"
+                    }
+                    $("#attendance_date").html(html)
+                    $("#error_attendance").hide()
+                    $("#error_attendance").html("")
+                    $("#attendance_block").show()
+                    $("#fetch_student_block").show()
+                    $("#student_data").html("")
+                } else {
+                    $("#error_attendance").html("No Attendance Date Found For Specified Data")
+                    $("#error_attendance").show()
+                    $("#attendance_date").html("")
+                    $("#attendance_block").hide()
+                }
+            }).fail(function (response) {
+                notifyUser("Error while fetching data", "error")
+                $("#error_attendance").html("")
+                $("#error_attendance").show()
+                $("#attendance_block").hide()
+            })
+        })
+
+        // Read-only: no checkboxes, no save button - this page has no
+        // mutation path at all, only get_attendance/get_student_attendance
+        // (both pure fetches) are ever called from here.
+        $("#fetch_student").click(function () {
+            var attendance_date = $("#attendance_date").val()
+            $("#student_data").html(null)
+            if (attendance_date.length == 0) {
+                notifyUser("Please choose a date", "warning")
+                return false
+            }
+            $.ajax({
+                url: "{% url 'get_student_attendance' %}",
+                type: 'POST',
+                data: { attendance_date_id: attendance_date }
+            }).done(function (response) {
+                var json_data = JSON.parse(response)
+                if (json_data.length < 1) {
+                    $("#student_data").html('<div class="alert alert-warning mt-3">No data to display.</div>')
+                    return
+                }
+                var div_data = "<hr/><div class='row'>"
+                for (key in json_data) {
+                    var on_leave = json_data[key]['on_leave']
+                    var status = json_data[key]['status']
+                    var badge = on_leave
+                        ? "<span class='badge badge-warning'>On Leave</span>"
+                        : (status === null
+                            ? "<span class='badge badge-secondary'>Not Recorded</span>"
+                            : (status ? "<span class='badge badge-success'>Present</span>" : "<span class='badge badge-danger'>Absent</span>"))
+                    div_data += "<div class='col-lg-3 mb-2'>" + escapeHtml(json_data[key]['name']) + " " + badge + "</div>"
+                }
+                div_data += "</div>"
+                $("#student_data").html(div_data)
+            }).fail(function (response) {
+                notifyUser("Error fetching students", "error")
+            })
+        })
+    })
+</script>
+{% endblock custom_js %}

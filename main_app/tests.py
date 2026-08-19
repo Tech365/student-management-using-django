@@ -16,9 +16,17 @@ from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      NotificationParent, NotificationStaff,
                      NotificationStudent, Parent, ParentStudentLink, Session,
                      SiteSettings, Staff, Student, StudentResult, Subject)
-from .utils import grant_role, user_roles
+from .utils import (grant_role, is_school_day, latest_school_day,
+                    take_attendance_date_error, user_roles)
 
 PASSWORD = "TestPass9137!"  # must pass AUTH_PASSWORD_VALIDATORS - some tests submit it through a real form
+
+# Take Attendance now rejects any date before the latest elapsed school day
+# (see main_app.utils.take_attendance_date_error) - these give every test a
+# date that's always valid regardless of when the suite actually runs,
+# instead of a hardcoded string that quietly drifts into the past.
+VALID_ATTENDANCE_DATE = datetime.date.today().isoformat()
+OTHER_VALID_ATTENDANCE_DATE = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
 
 def make_admin(email):
@@ -54,10 +62,11 @@ def make_course(name="Computer Science"):
     return Course.objects.create(name=name)
 
 
-def make_session():
+def make_session(school_days=''):
     return Session.objects.create(
         start_year=datetime.date(2024, 1, 1),
         end_year=datetime.date(2024, 12, 31),
+        school_days=school_days,
     )
 
 
@@ -338,7 +347,7 @@ class SaveAttendanceTests(TestCase):
 
     def test_retaking_attendance_updates_existing_status(self):
         payload = {
-            'date': '2026-08-08',
+            'date': VALID_ATTENDANCE_DATE,
             'subject': self.subject.id,
             'session': self.session.id,
         }
@@ -359,18 +368,18 @@ class SaveAttendanceTests(TestCase):
 
     def test_approved_leave_student_not_recorded_even_if_submitted(self):
         LeaveReportStudent.objects.create(
-            student=self.student, date="2026-08-08", message="Sick", status=1)
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=1)
         self.client.post(reverse('save_attendance'), {
-            'date': '2026-08-08', 'subject': self.subject.id, 'session': self.session.id,
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.subject.id, 'session': self.session.id,
             'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
         })
         self.assertFalse(AttendanceReport.objects.filter(student=self.student).exists())
 
     def test_pending_leave_student_still_recorded(self):
         LeaveReportStudent.objects.create(
-            student=self.student, date="2026-08-08", message="Sick", status=0)
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=0)
         self.client.post(reverse('save_attendance'), {
-            'date': '2026-08-08', 'subject': self.subject.id, 'session': self.session.id,
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.subject.id, 'session': self.session.id,
             'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
         })
         self.assertTrue(AttendanceReport.objects.filter(student=self.student).exists())
@@ -406,7 +415,7 @@ class AttendanceEndpointsPermissionTests(TestCase):
 
     def test_save_attendance_rejects_other_teachers_subject(self):
         response = self.client.post(reverse('save_attendance'), {
-            'date': '2026-08-08', 'subject': self.owner_subject.id, 'session': self.session.id,
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.owner_subject.id, 'session': self.session.id,
             'student_ids': json.dumps([{'id': self.owner_student.id, 'status': 0}]),
         })
         self.assertEqual(response.content, b"False")
@@ -432,7 +441,7 @@ class AttendanceEndpointsPermissionTests(TestCase):
         self.client.logout()
         self.client.login(username="attendance_owner@example.com", password=PASSWORD)
         response = self.client.post(reverse('get_students'), {
-            'subject': self.owner_subject.id, 'session': self.session.id, 'date': '2026-08-08',
+            'subject': self.owner_subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
         })
         self.assertEqual(response.status_code, 200)
 
@@ -444,7 +453,7 @@ class AttendanceEndpointsPermissionTests(TestCase):
         self.client.logout()
         self.client.login(username="attendance_owner@example.com", password=PASSWORD)
         self.client.post(reverse('save_attendance'), {
-            'date': '2026-08-09', 'subject': self.owner_subject.id, 'session': self.session.id,
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.owner_subject.id, 'session': self.session.id,
             'student_ids': json.dumps([{'id': outsider.id, 'status': 1}]),
         })
         self.assertFalse(AttendanceReport.objects.filter(student=outsider).exists())
@@ -461,6 +470,125 @@ class AttendanceEndpointsPermissionTests(TestCase):
         })
         outside_report.refresh_from_db()
         self.assertFalse(outside_report.status)  # untouched
+
+
+class TakeAttendanceDateRestrictionTests(TestCase):
+    """take_attendance_date_error/latest_school_day/is_school_day - Take
+    Attendance previously accepted any date at all, past or future, with
+    zero server-side validation."""
+
+    def setUp(self):
+        self.course = make_course("Date Restriction Course")
+        self.session = make_session()  # unrestricted (school_days='')
+        self.staff = make_staff("date_restriction_staff@example.com", self.course)
+        self.subject = make_subject("Date Restriction Subject", self.staff, self.course)
+        self.student = make_student("date_restriction_student@example.com", self.course, self.session)
+        self.client.login(username="date_restriction_staff@example.com", password=PASSWORD)
+
+    def test_latest_school_day_unrestricted_returns_today(self):
+        today = datetime.date(2026, 8, 19)  # a Wednesday
+        self.assertEqual(latest_school_day(self.session, today=today), today)
+
+    def test_latest_school_day_restricted_walks_back_to_allowed_weekday(self):
+        self.session.school_days = '6'  # Saturdays only
+        self.session.save()
+        saturday = datetime.date(2026, 8, 15)
+        following_tuesday = datetime.date(2026, 8, 18)
+        self.assertEqual(latest_school_day(self.session, today=following_tuesday), saturday)
+
+    def test_is_school_day(self):
+        self.session.school_days = '6'
+        self.session.save()
+        self.assertTrue(is_school_day(self.session, datetime.date(2026, 8, 15)))   # Saturday
+        self.assertFalse(is_school_day(self.session, datetime.date(2026, 8, 18)))  # Tuesday
+
+    def test_get_students_rejects_date_before_floor(self):
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': yesterday,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.json())
+
+    def test_get_students_accepts_todays_date(self):
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        self.assertEqual(response.status_code, 200)
+
+    def test_get_students_accepts_future_date(self):
+        future = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': future,
+        })
+        self.assertEqual(response.status_code, 200)
+
+    def test_save_attendance_rejects_date_before_floor(self):
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        response = self.client.post(reverse('save_attendance'), {
+            'date': yesterday, 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(response.content, b"False")
+        self.assertFalse(Attendance.objects.filter(subject=self.subject, date=yesterday).exists())
+
+    def test_get_students_rejects_non_school_day_for_restricted_session(self):
+        self.session.school_days = '6'  # Saturdays only
+        self.session.save()
+        # A future date that's definitely not a Saturday, without needing
+        # to know what day it actually is when the suite runs.
+        candidate = datetime.date.today() + datetime.timedelta(days=1)
+        while candidate.weekday() != 1:  # Python weekday(): Tuesday == 1, never Saturday (5)
+            candidate += datetime.timedelta(days=1)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': candidate.isoformat(),
+        })
+        self.assertEqual(response.status_code, 400)
+
+
+class StaffViewAttendanceTests(TestCase):
+    """The new read-only staff View Attendance screen - reuses the same
+    scoped get_attendance/get_student_attendance endpoints as Update
+    Attendance, but must never expose a save path."""
+
+    def setUp(self):
+        self.course = make_course("View Attendance Course")
+        self.session = make_session()
+        self.staff = make_staff("view_attendance_staff@example.com", self.course)
+        self.other_staff = make_staff("view_attendance_other@example.com", make_course("Other View Course"))
+        self.subject = make_subject("View Attendance Subject", self.staff, self.course)
+        self.student = make_student("view_attendance_student@example.com", self.course, self.session)
+        self.attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=VALID_ATTENDANCE_DATE)
+        AttendanceReport.objects.create(student=self.student, attendance=self.attendance, status=True)
+        self.client.login(username="view_attendance_staff@example.com", password=PASSWORD)
+
+    def test_page_renders_with_no_save_path(self):
+        response = self.client.get(reverse('staff_view_attendance'))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b"save_attendance", response.content)
+        self.assertNotIn(b"update_attendance", response.content)
+
+    def test_can_fetch_own_attendance_dates_and_roster(self):
+        response = self.client.post(reverse('get_attendance'), {
+            'subject': self.subject.id, 'session': self.session.id,
+        })
+        dates = json.loads(response.json())
+        self.assertEqual(len(dates), 1)
+
+        response = self.client.post(reverse('get_student_attendance'), {
+            'attendance_date_id': self.attendance.id,
+        })
+        rows = json.loads(response.json())
+        self.assertEqual(rows[0]['status'], True)
+
+    def test_cannot_fetch_another_teachers_attendance(self):
+        self.client.logout()
+        self.client.login(username="view_attendance_other@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_student_attendance'), {
+            'attendance_date_id': self.attendance.id,
+        })
+        self.assertEqual(response.status_code, 400)
 
 
 class ViewUpdateAttendanceLeaveTests(TestCase):
@@ -1408,12 +1536,12 @@ class TakeAttendanceLeaveFlagTests(TestCase):
         self.on_leave_student = make_student("attendance_leave_on@example.com", self.course, self.session)
         self.other_student = make_student("attendance_leave_off@example.com", self.course, self.session)
         LeaveReportStudent.objects.create(
-            student=self.on_leave_student, date="2024-06-15", message="Sick", status=1)
+            student=self.on_leave_student, date=VALID_ATTENDANCE_DATE, message="Sick", status=1)
         self.client.login(username="attendance_leave_teacher@example.com", password=PASSWORD)
 
     def test_approved_leave_on_date_is_flagged(self):
         response = self.client.post(reverse('get_students'), {
-            'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-15',
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
         })
         data = {row['id']: row['on_leave'] for row in json.loads(response.json())['students']}
         self.assertTrue(data[self.on_leave_student.id])
@@ -1421,7 +1549,7 @@ class TakeAttendanceLeaveFlagTests(TestCase):
 
     def test_leave_on_a_different_date_not_flagged(self):
         response = self.client.post(reverse('get_students'), {
-            'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-16',
+            'subject': self.subject.id, 'session': self.session.id, 'date': OTHER_VALID_ATTENDANCE_DATE,
         })
         data = {row['id']: row['on_leave'] for row in json.loads(response.json())['students']}
         self.assertFalse(data[self.on_leave_student.id])
@@ -1429,7 +1557,7 @@ class TakeAttendanceLeaveFlagTests(TestCase):
     def test_pending_leave_not_flagged(self):
         LeaveReportStudent.objects.filter(student=self.on_leave_student).update(status=0)
         response = self.client.post(reverse('get_students'), {
-            'subject': self.subject.id, 'session': self.session.id, 'date': '2024-06-15',
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
         })
         data = {row['id']: row['on_leave'] for row in json.loads(response.json())['students']}
         self.assertFalse(data[self.on_leave_student.id])
@@ -2718,7 +2846,7 @@ class CoTeachingTests(TestCase):
         for email in ("coteach_a@example.com", "coteach_b@example.com"):
             self.client.login(username=email, password=PASSWORD)
             response = self.client.post(reverse('get_students'), {
-                'subject': self.subject.id, 'session': self.session.id, 'date': '2026-08-17',
+                'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
             })
             self.assertEqual(response.status_code, 200)
             self.client.logout()
@@ -2726,7 +2854,7 @@ class CoTeachingTests(TestCase):
     def test_get_students_reports_not_taken_before_anyone_saves(self):
         self.client.login(username="coteach_a@example.com", password=PASSWORD)
         response = self.client.post(reverse('get_students'), {
-            'subject': self.subject.id, 'session': self.session.id, 'date': '2026-08-17',
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
         })
         payload = json.loads(response.json())
         self.assertFalse(payload['already_taken'])
@@ -2736,14 +2864,14 @@ class CoTeachingTests(TestCase):
     def test_second_teacher_sees_already_taken_by_first(self):
         self.client.login(username="coteach_a@example.com", password=PASSWORD)
         self.client.post(reverse('save_attendance'), {
-            'date': '2026-08-17', 'subject': self.subject.id, 'session': self.session.id,
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.subject.id, 'session': self.session.id,
             'student_ids': json.dumps([{'id': self.student.id, 'status': 0}]),
         })
         self.client.logout()
 
         self.client.login(username="coteach_b@example.com", password=PASSWORD)
         response = self.client.post(reverse('get_students'), {
-            'subject': self.subject.id, 'session': self.session.id, 'date': '2026-08-17',
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
         })
         payload = json.loads(response.json())
         self.assertTrue(payload['already_taken'])
@@ -2753,21 +2881,21 @@ class CoTeachingTests(TestCase):
     def test_second_teacher_can_still_save_and_becomes_taken_by(self):
         self.client.login(username="coteach_a@example.com", password=PASSWORD)
         self.client.post(reverse('save_attendance'), {
-            'date': '2026-08-17', 'subject': self.subject.id, 'session': self.session.id,
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.subject.id, 'session': self.session.id,
             'student_ids': json.dumps([{'id': self.student.id, 'status': 0}]),
         })
         self.client.logout()
 
         self.client.login(username="coteach_b@example.com", password=PASSWORD)
         response = self.client.post(reverse('save_attendance'), {
-            'date': '2026-08-17', 'subject': self.subject.id, 'session': self.session.id,
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.subject.id, 'session': self.session.id,
             'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
         })
         self.assertEqual(response.content, b"OK")
 
         # Same Attendance row updated, not a duplicate.
-        self.assertEqual(Attendance.objects.filter(subject=self.subject, session=self.session, date='2026-08-17').count(), 1)
-        attendance = Attendance.objects.get(subject=self.subject, session=self.session, date='2026-08-17')
+        self.assertEqual(Attendance.objects.filter(subject=self.subject, session=self.session, date=VALID_ATTENDANCE_DATE).count(), 1)
+        attendance = Attendance.objects.get(subject=self.subject, session=self.session, date=VALID_ATTENDANCE_DATE)
         self.assertEqual(attendance.taken_by, self.teacher_b)
         report = AttendanceReport.objects.get(student=self.student, attendance=attendance)
         self.assertTrue(report.status)  # B's correction took effect
