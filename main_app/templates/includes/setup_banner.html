@@ -1,0 +1,17 @@
+{% if setup_progress %}
+{% if not setup_progress.all_done %}
+<div class="alert alert-info mb-0 rounded-0 d-flex justify-content-between align-items-center">
+    <span>
+        <i data-lucide="rocket"></i>
+        Finish setting up your school: next up is
+        <strong>{{ setup_progress.next_step.0 }}</strong>.
+    </span>
+    <a href="{% url setup_progress.next_step.2 %}" class="btn btn-sm btn-info">Continue</a>
+</div>
+{% else %}
+<div class="alert alert-info mb-0 rounded-0 d-flex justify-content-between align-items-center">
+    <span><i data-lucide="rocket"></i> Almost done — review what you've added and finish setup.</span>
+    <a href="{% url 'setup_review' %}" class="btn btn-sm btn-info">Review & Finish</a>
+</div>
+{% endif %}
+{% endif %}

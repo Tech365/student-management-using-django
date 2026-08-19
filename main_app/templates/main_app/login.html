@@ -1,11 +1,11 @@
-{% load static %}
+{% load static main_app_extras %}
 <!DOCTYPE html>
 <html>
 
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Madrasa Jamaliyah | Log in</title>
+    <title>{{ site_settings.school_name|default:"Madrasa Jamaliyah" }} | Log in</title>
     <!-- Tell the browser to be responsive to screen width -->
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- icheck bootstrap -->
@@ -25,7 +25,7 @@
     <div class="login-box">
         <div class="login-logo">
             <a href="{% url 'login_page' %}">
-                <img src="{% static 'dist/img/madrasa-logo-full.png' %}" alt="Madrasa Jamaliyah"
+                <img src="{{ site_settings|site_logo_url:'full' }}" alt="{{ site_settings.school_name|default:'Madrasa Jamaliyah' }}"
                     style="max-width: 240px; width: 100%; height: auto;">
             </a>
         </div>

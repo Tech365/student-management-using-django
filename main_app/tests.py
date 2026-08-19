@@ -15,17 +15,28 @@ from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      CustomUser, LeaveReportStaff, LeaveReportStudent,
                      NotificationParent, NotificationStaff,
                      NotificationStudent, Parent, ParentStudentLink, Session,
-                     Staff, Student, StudentResult, Subject)
+                     SiteSettings, Staff, Student, StudentResult, Subject)
 from .utils import grant_role, user_roles
 
 PASSWORD = "TestPass9137!"  # must pass AUTH_PASSWORD_VALIDATORS - some tests submit it through a real form
 
 
 def make_admin(email):
-    return CustomUser.objects.create_superuser(
+    user = CustomUser.objects.create_superuser(
         email=email, password=PASSWORD, user_type=1,
         first_name="Bulk", last_name="Admin",
     )
+    # The vast majority of tests use this as generic "a working admin"
+    # scaffolding, not to exercise onboarding - default to an already-set-up
+    # school so LoginCheckMiddleWare's onboarding force-redirect doesn't
+    # intercept every admin-page request in every other test class. Tests
+    # that specifically exercise onboarding (see OnboardingMiddlewareRedirectTests/
+    # SetupBannerTests) explicitly reset this back to False afterward.
+    site_settings = SiteSettings.load()
+    if not site_settings.onboarding_completed:
+        site_settings.onboarding_completed = True
+        site_settings.save()
+    return user
 
 
 def csv_file(content, name="upload.csv"):
@@ -2422,9 +2433,11 @@ class DjangoAdminCompatibilityTests(TestCase):
     match the CharField's actual (string) values."""
 
     def setUp(self):
-        self.superuser = CustomUser.objects.create_superuser(
-            email="dj_admin_super@example.com", password=PASSWORD, user_type=1,
-            first_name="Super", last_name="User")
+        # make_admin(), not CustomUser.objects.create_superuser() directly,
+        # so this admin lands past LoginCheckMiddleWare's onboarding
+        # force-redirect (see make_admin's docstring) - this test is about
+        # Django admin compatibility, not onboarding.
+        self.superuser = make_admin("dj_admin_super@example.com")
         self.client.login(username="dj_admin_super@example.com", password=PASSWORD)
 
     def test_add_user_page_loads(self):
@@ -3205,3 +3218,251 @@ class FailedLoginLoggingTests(TestCase):
             })
         self.assertEqual(response.status_code, 302)
         mock_warning.assert_not_called()
+
+
+class SiteSettingsSingletonTests(TestCase):
+    """SiteSettings.load()/.save() - the singleton pattern backing the
+    onboarding wizard's School Profile/Email steps and the branding
+    fallback everywhere else."""
+
+    def test_load_creates_singleton_row(self):
+        # The 0011 data migration already creates this row once when the
+        # test DB itself is built, so start from a genuinely empty table -
+        # QuerySet.delete() is a bulk SQL delete that bypasses the
+        # instance-level delete() no-op override (which only intercepts
+        # instance.delete(), not queryset-level deletes).
+        SiteSettings.objects.all().delete()
+        self.assertEqual(SiteSettings.objects.count(), 0)
+        obj = SiteSettings.load()
+        self.assertEqual(obj.pk, 1)
+        self.assertEqual(SiteSettings.objects.count(), 1)
+
+    def test_load_is_idempotent(self):
+        first = SiteSettings.load()
+        second = SiteSettings.load()
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(SiteSettings.objects.count(), 1)
+
+    def test_save_forces_pk_1(self):
+        obj = SiteSettings(pk=None, school_name="X")
+        obj.save()
+        self.assertEqual(obj.pk, 1)
+        self.assertEqual(SiteSettings.objects.count(), 1)
+
+
+class SiteSettingsBackfillMigrationTests(TestCase):
+    """migrations/0011_sitesettings_backfill.py's data migration - the
+    mechanism that must keep an already-set-up install (like production)
+    from ever seeing the onboarding wizard."""
+
+    def _run_backfill(self):
+        # Clear the row the 0011 migration already created when the test DB
+        # itself was built, so get_or_create's `defaults` actually apply -
+        # otherwise it just finds that pre-existing row and leaves it alone,
+        # which is correct real-world get_or_create behavior but not what
+        # a from-scratch migration run looks like.
+        SiteSettings.objects.all().delete()
+        import importlib
+        module = importlib.import_module('main_app.migrations.0011_sitesettings_backfill')
+        from django.apps import apps as global_apps
+        module.backfill_onboarding_completed(global_apps, None)
+
+    def test_backfill_sets_true_when_course_exists(self):
+        make_course("Backfill Course")
+        self._run_backfill()
+        self.assertTrue(SiteSettings.load().onboarding_completed)
+
+    def test_backfill_sets_true_when_staff_or_student_exists(self):
+        course = make_course("Backfill Staff Course")
+        make_staff("backfill_staff@example.com", course)
+        self._run_backfill()
+        self.assertTrue(SiteSettings.load().onboarding_completed)
+
+    def test_backfill_sets_false_on_empty_db(self):
+        self._run_backfill()
+        self.assertFalse(SiteSettings.load().onboarding_completed)
+
+
+class OnboardingMiddlewareRedirectTests(TestCase):
+    """LoginCheckMiddleWare's onboarding force-redirect - only steps 1-2
+    are force-gated, and only for Admin, and never once onboarding_completed
+    is True (the production-safety regression test)."""
+
+    def setUp(self):
+        self.course = make_course("Onboarding Course")
+        self.session = make_session()
+
+    def test_fresh_admin_redirected_to_school_profile(self):
+        # make_admin() defaults SiteSettings to onboarding_completed=True
+        # (see its docstring) since almost every OTHER test class relies on
+        # that - undo it here to exercise the genuinely-fresh-install path.
+        make_admin("fresh_onboarding_admin@example.com")
+        site_settings = SiteSettings.load()
+        site_settings.onboarding_completed = False
+        site_settings.save()
+        self.client.login(username="fresh_onboarding_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('admin_home'))
+        self.assertRedirects(response, reverse('setup_school_profile'))
+
+    def test_admin_with_school_name_set_redirected_to_email_settings(self):
+        make_admin("named_onboarding_admin@example.com")
+        site_settings = SiteSettings.load()
+        site_settings.onboarding_completed = False
+        site_settings.school_name = "Test School"
+        site_settings.save()
+        self.client.login(username="named_onboarding_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('admin_home'))
+        self.assertRedirects(response, reverse('setup_email_settings'))
+
+    def test_admin_after_email_step_seen_not_redirected(self):
+        make_admin("past_email_step_admin@example.com")
+        site_settings = SiteSettings.load()
+        site_settings.onboarding_completed = False
+        site_settings.school_name = "Test School"
+        site_settings.save()
+        self.client.login(username="past_email_step_admin@example.com", password=PASSWORD)
+        s = self.client.session
+        s['setup_email_step_seen'] = True
+        s.save()
+        response = self.client.get(reverse('admin_home'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_already_set_up_admin_never_redirected(self):
+        make_admin("set_up_admin@example.com")
+        site_settings = SiteSettings.load()
+        site_settings.onboarding_completed = True
+        site_settings.save()
+        self.client.login(username="set_up_admin@example.com", password=PASSWORD)
+        response = self.client.get(reverse('admin_home'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_non_admin_roles_never_redirected(self):
+        # Fresh/incomplete SiteSettings (the default in setUp) - the
+        # force-gate must still never fire for a non-admin role.
+        make_staff("onboarding_staff@example.com", self.course)
+        self.client.login(username="onboarding_staff@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_home'))
+        self.assertEqual(response.status_code, 200)
+
+        make_student("onboarding_student@example.com", self.course, self.session)
+        client2 = Client()
+        client2.login(username="onboarding_student@example.com", password=PASSWORD)
+        response2 = client2.get(reverse('student_home'))
+        self.assertEqual(response2.status_code, 200)
+
+
+class SetupBannerTests(TestCase):
+    """includes/setup_banner.html, driven by the site_settings() context
+    processor's setup_progress - a nudge, never a block, past step 2."""
+
+    def setUp(self):
+        make_admin("banner_admin@example.com")
+        site_settings = SiteSettings.load()
+        site_settings.onboarding_completed = False
+        site_settings.school_name = "Banner School"
+        site_settings.save()
+        self.client.login(username="banner_admin@example.com", password=PASSWORD)
+        s = self.client.session
+        s['setup_email_step_seen'] = True
+        s.save()
+
+    def test_banner_shown_for_fresh_admin_after_onboarding_started(self):
+        response = self.client.get(reverse('admin_home'))
+        self.assertContains(response, "Finish setting up your school")
+
+    def test_banner_not_shown_once_onboarding_completed(self):
+        site_settings = SiteSettings.load()
+        site_settings.onboarding_completed = True
+        site_settings.save()
+        response = self.client.get(reverse('admin_home'))
+        self.assertNotContains(response, "Finish setting up your school")
+
+    def test_banner_does_not_block_navigation(self):
+        response = self.client.get(reverse('manage_course'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_banner_points_at_next_incomplete_step(self):
+        response = self.client.get(reverse('admin_home'))
+        self.assertContains(response, reverse('add_session'))
+
+        make_session()
+        response = self.client.get(reverse('admin_home'))
+        self.assertContains(response, reverse('add_course'))
+
+
+class EmailSettingsFallbackTests(TestCase):
+    """send_notification_email()'s SiteSettings-first, env-var-fallback
+    behavior, and the setup_send_test_email endpoint's error surfacing."""
+
+    def setUp(self):
+        self.course = make_course("Email Fallback Course")
+        self.student = make_student("email_fallback_student@example.com", self.course, make_session())
+
+    def test_send_notification_uses_django_settings_when_sitesettings_blank(self):
+        from .utils import send_notification_email
+        send_notification_email(self.student.admin, "Hello")
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_send_notification_prefers_sitesettings_smtp_when_set(self):
+        from unittest.mock import patch
+        site_settings = SiteSettings.load()
+        site_settings.email_host = "smtp.example.com"
+        site_settings.email_host_user = "sender@example.com"
+        site_settings.email_host_password = "secret"
+        site_settings.save()
+
+        from .utils import send_notification_email
+        with patch('main_app.utils.send_mail') as mock_send_mail:
+            send_notification_email(self.student.admin, "Hello")
+        _, kwargs = mock_send_mail.call_args
+        self.assertIn("sender@example.com", kwargs['from_email'])
+        self.assertIsNotNone(kwargs['connection'])
+
+    def test_setup_send_test_email_view_surfaces_smtp_error(self):
+        from unittest.mock import patch
+        make_admin("test_email_admin@example.com")
+        self.client.login(username="test_email_admin@example.com", password=PASSWORD)
+        with patch('main_app.setup_views.send_mail', side_effect=Exception("boom")):
+            response = self.client.post(reverse('setup_send_test_email'), {
+                'email_host': 'smtp.example.com', 'email_port': '587',
+                'email_host_user': 'sender@example.com', 'email_host_password': 'secret',
+                'email_use_tls': 'on',
+            })
+        data = response.json()
+        self.assertFalse(data['success'])
+        self.assertIn('boom', data['message'])
+
+    def test_setup_send_test_email_view_success(self):
+        from unittest.mock import patch
+        make_admin("test_email_success_admin@example.com")
+        self.client.login(username="test_email_success_admin@example.com", password=PASSWORD)
+        with patch('main_app.setup_views.send_mail'):
+            response = self.client.post(reverse('setup_send_test_email'), {
+                'email_host': 'smtp.example.com', 'email_port': '587',
+                'email_host_user': 'sender@example.com', 'email_host_password': 'secret',
+                'email_use_tls': 'on',
+            })
+        data = response.json()
+        self.assertTrue(data['success'])
+
+
+class BrandingFallbackRenderingTests(TestCase):
+    """site_settings() context processor + the |default:"Madrasa Jamaliyah"
+    template sweep - branding must render unchanged when SiteSettings is
+    blank, and pick up a custom name once set, on both authenticated and
+    fully anonymous requests."""
+
+    def test_login_page_shows_default_branding_when_sitesettings_empty(self):
+        response = self.client.get(reverse('login_page'))
+        self.assertContains(response, "Madrasa Jamaliyah")
+
+    def test_login_page_shows_custom_school_name_when_set(self):
+        site_settings = SiteSettings.load()
+        site_settings.school_name = "Springfield Elementary"
+        site_settings.save()
+        response = self.client.get(reverse('login_page'))
+        self.assertContains(response, "Springfield Elementary | Log in")
+
+    def test_context_processor_available_on_privacy_notice_anonymous(self):
+        response = self.client.get(reverse('privacy_notice'))
+        self.assertEqual(response.status_code, 200)

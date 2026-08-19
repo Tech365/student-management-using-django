@@ -1,0 +1,81 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">Step {{ wizard_step }} of {{ wizard_total }}: {{ page_title }}</h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">
+                            Here's where things stand. You can keep adding people later from the sidebar —
+                            none of this is required before you finish setup.
+                        </p>
+                        <table class="table">
+                            <tbody>
+                                <tr>
+                                    <td>Academic Session</td>
+                                    <td>{{ session_count }}</td>
+                                    <td class="text-right">
+                                        {% if session_count %}
+                                        <span class="badge badge-success">Done</span>
+                                        {% else %}
+                                        <a href="{% url 'add_session' %}" class="btn btn-sm btn-outline-primary">Add</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Courses</td>
+                                    <td>{{ course_count }}</td>
+                                    <td class="text-right">
+                                        {% if course_count %}
+                                        <span class="badge badge-success">Done</span>
+                                        {% else %}
+                                        <a href="{% url 'add_course' %}" class="btn btn-sm btn-outline-primary">Add</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Teachers</td>
+                                    <td>{{ staff_count }}</td>
+                                    <td class="text-right">
+                                        {% if staff_count %}
+                                        <span class="badge badge-success">Done</span>
+                                        {% else %}
+                                        <a href="{% url 'add_staff' %}" class="btn btn-sm btn-outline-primary">Add</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Students</td>
+                                    <td>{{ student_count }}</td>
+                                    <td class="text-right">
+                                        {% if student_count %}
+                                        <span class="badge badge-success">Done</span>
+                                        {% else %}
+                                        <a href="{% url 'add_student' %}" class="btn btn-sm btn-outline-primary">Add</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <form method="POST">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-primary btn-block">Finish Setup</button>
+                        </form>
+                    </div>
+                </div>
+                <!-- /.card -->
+
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}

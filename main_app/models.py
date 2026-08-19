@@ -290,6 +290,46 @@ class AuditLog(models.Model):
         return f"{self.actor} {self.action} {self.target_model} {self.target_repr}"
 
 
+class SiteSettings(models.Model):
+    """Singleton row (always pk=1) holding this install's school branding
+    and SMTP config - lets a fresh-install admin configure both through the
+    onboarding wizard instead of editing server env vars/template files."""
+    school_name = models.CharField(max_length=255, blank=True)
+    logo = models.ImageField(upload_to='site/', blank=True, null=True)
+    address = models.CharField(max_length=255, blank=True)
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=20, blank=True)
+    email_host = models.CharField(max_length=255, blank=True)
+    email_port = models.PositiveIntegerField(blank=True, null=True)
+    email_host_user = models.CharField(max_length=255, blank=True)
+    # Plain text, not hashed: this has to be read back to authenticate with
+    # the SMTP server - same tradeoff the EMAIL_HOST_PASSWORD env var
+    # already has today, not a new gap introduced here.
+    email_host_password = models.CharField(max_length=255, blank=True)
+    email_use_tls = models.BooleanField(default=True)
+    onboarding_completed = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        pass  # the singleton row is never deletable via the ORM
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def logo_url(self):
+        return self.logo.url if self.logo else None
+
+    def __str__(self):
+        return self.school_name or "Site Settings"
+
+
 @receiver(post_save, sender=CustomUser)
 def create_user_profile(sender, instance, created, **kwargs):
     if created:

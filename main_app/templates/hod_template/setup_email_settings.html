@@ -1,0 +1,92 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">Step {{ wizard_step }} of {{ wizard_total }}: {{ page_title }}</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Using Gmail?</strong> You'll need an "App Password", not your normal
+                            Gmail password:
+                            <ol class="mb-0">
+                                <li>Turn on 2-Step Verification on the Google account you want to send from, if it isn't already.</li>
+                                <li>Go to <code>myaccount.google.com</code> &rarr; Security &rarr; App passwords.</li>
+                                <li>Create one (any name works) and copy the 16-character password it gives you.</li>
+                                <li>Host: <code>smtp.gmail.com</code>, Port: <code>587</code>, Username: your full Gmail address, Password: the App Password, TLS: on.</li>
+                            </ol>
+                        </div>
+                        <p class="text-muted">
+                            This is used to send notifications (leave decisions, announcements, etc.) to
+                            staff, students, and parents. You can skip this for now and set it up later.
+                        </p>
+
+                        <form role="form" method="POST" id="email-settings-form">
+                            {% csrf_token %}
+                            {% for field in form %}
+                            <div class="form-group">
+                                {{ field.errors }}
+                                {{ field.label_tag }}
+                                {{ field }}
+                                {% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}
+                            </div>
+                            {% endfor %}
+
+                            <div class="card-footer px-0 d-flex justify-content-between">
+                                <button type="button" id="test-email-btn" class="btn btn-outline-secondary">
+                                    Send Test Email
+                                </button>
+                                <div>
+                                    <button type="submit" name="skip" formnovalidate class="btn btn-link">
+                                        Skip for now
+                                    </button>
+                                    <button type="submit" name="continue" class="btn btn-primary">
+                                        Save &amp; Continue
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <!-- /.card -->
+
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
+
+{% block custom_js %}
+<script>
+    $(document).ready(function () {
+        $("#test-email-btn").click(function () {
+            var $btn = $(this);
+            $btn.prop('disabled', true).text('Sending...');
+            $.ajax({
+                url: "{% url 'setup_send_test_email' %}",
+                type: 'POST',
+                data: {
+                    email_host: $("#id_email_host").val(),
+                    email_port: $("#id_email_port").val(),
+                    email_host_user: $("#id_email_host_user").val(),
+                    email_host_password: $("#id_email_host_password").val(),
+                    email_use_tls: $("#id_email_use_tls").is(':checked') ? 'on' : ''
+                }
+            }).done(function (response) {
+                notifyUser(response.message, response.success ? 'success' : 'error');
+            }).fail(function () {
+                notifyUser("Could not reach the server. Please try again.", "error");
+            }).always(function () {
+                $btn.prop('disabled', false).text('Send Test Email');
+            });
+        });
+    });
+</script>
+{% endblock custom_js %}

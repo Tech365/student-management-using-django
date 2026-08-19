@@ -34,6 +34,24 @@ def avatar_url(profile_pic):
     return value or static(DEFAULT_AVATAR)
 
 
+DEFAULT_LOGO_CIRCULAR = 'dist/img/madrasa-emblem-circular.png'
+DEFAULT_LOGO_FULL = 'dist/img/madrasa-logo-full.png'
+
+
+@register.filter
+def site_logo_url(site_settings, variant='circular'):
+    """{{ site_settings|site_logo_url }} / {{ site_settings|site_logo_url:'full' }}
+    - falls back to this install's original bundled logo when no school
+    logo has been uploaded yet, same fallback pattern as avatar_url above.
+    Both variants (the small circular emblem used in the navbar/sidebar,
+    and the full logo used on full-page screens like login) fall back to
+    the SAME uploaded logo once one is set - a single upload covers both
+    by design, not a bug."""
+    if site_settings and site_settings.logo_url:
+        return site_settings.logo_url
+    return static(DEFAULT_LOGO_FULL if variant == 'full' else DEFAULT_LOGO_CIRCULAR)
+
+
 @register.filter
 def without_page(query_dict):
     """request.GET with the 'page' key stripped and re-encoded, for

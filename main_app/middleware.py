@@ -42,6 +42,23 @@ class LoginCheckMiddleWare(MiddlewareMixin):
                     return redirect(reverse('login_page'))
                 request.session['active_role'] = active_role
             if active_role == '1': # Is it the HOD/Admin
+                if modulename not in ('main_app.setup_views', 'main_app.views'):
+                    # The onboarding wizard's own views and logout/choose-role
+                    # (main_app.views) are exempted so an admin mid-setup can
+                    # always log out, and the wizard's own pages don't
+                    # redirect-loop against themselves. Everything else is
+                    # force-gated only through the two brand-new steps
+                    # (school_name set, email step seen) - once past those,
+                    # onboarding_completed stays False until Finish is
+                    # clicked, but navigation is free from here on (see
+                    # includes/setup_banner.html for the ongoing nudge).
+                    from .models import SiteSettings
+                    site_settings = SiteSettings.load()
+                    if not site_settings.onboarding_completed:
+                        if not site_settings.school_name and request.path != reverse('setup_school_profile'):
+                            return redirect(reverse('setup_school_profile'))
+                        elif not request.session.get('setup_email_step_seen') and request.path != reverse('setup_email_settings'):
+                            return redirect(reverse('setup_email_settings'))
                 if modulename in ('main_app.student_views', 'main_app.parent_views'):
                     return redirect(reverse('admin_home'))
             elif active_role == '2': #  Staff :-/ ?

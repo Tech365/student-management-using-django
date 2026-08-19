@@ -17,7 +17,7 @@ from django.urls import path
 
 from main_app.EditResultView import EditResultView
 
-from . import hod_views, parent_views, staff_views, student_views, views
+from . import hod_views, parent_views, setup_views, staff_views, student_views, views
 
 urlpatterns = [
     path("", views.login_page, name='login_page'),
@@ -28,6 +28,10 @@ urlpatterns = [
     path("choose-role/", views.choose_role, name='choose_role'),
     path("logout_user/", views.logout_user, name='user_logout'),
     path("admin/home/", hod_views.admin_home, name='admin_home'),
+    path("setup/school-profile/", setup_views.setup_school_profile, name='setup_school_profile'),
+    path("setup/email-settings/", setup_views.setup_email_settings, name='setup_email_settings'),
+    path("setup/email-settings/test/", setup_views.setup_send_test_email, name='setup_send_test_email'),
+    path("setup/review/", setup_views.setup_review, name='setup_review'),
     path("account/<int:user_id>/grant-role/<str:role_code>/",
          hod_views.grant_role_quick, name='grant_role_quick'),
     path("admin/search/", hod_views.global_search, name='global_search'),

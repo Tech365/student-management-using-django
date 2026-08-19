@@ -3,7 +3,7 @@
 {% if active_role == '1' %}
     <!-- Brand Logo -->
     <a href="{% url 'admin_home' %}" class="brand-link">
-        <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
+        <img src="{{ site_settings|site_logo_url }} " alt="{{ site_settings.school_name|default:'Madrasa Jamaliyah' }} Logo"
             class="brand-image img-circle elevation-3" style="opacity: .8">
         <span class="brand-text font-weight-light">Admin Panel</span>
     </a>
@@ -278,7 +278,7 @@
 {% elif active_role == '2' %}
     <!-- Brand Logo -->
     <a href="#" class="brand-link">
-        <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
+        <img src="{{ site_settings|site_logo_url }} " alt="{{ site_settings.school_name|default:'Madrasa Jamaliyah' }} Logo"
             class="brand-image img-circle elevation-3" style="opacity: .8">
         <span class="brand-text font-weight-light">Staff Panel</span>
     </a>
@@ -390,7 +390,7 @@
 {% elif active_role == '3' %}
     <!-- Brand Logo -->
     <a href="" class="brand-link">
-        <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
+        <img src="{{ site_settings|site_logo_url }} " alt="{{ site_settings.school_name|default:'Madrasa Jamaliyah' }} Logo"
             class="brand-image img-circle elevation-3" style="opacity: .8">
         <span class="brand-text font-weight-light">Student Panel</span>
     </a>
@@ -479,7 +479,7 @@
 {% elif active_role == '4' %}
     <!-- Brand Logo -->
     <a href="" class="brand-link">
-        <img src="{% static 'dist/img/madrasa-emblem-circular.png' %} " alt="Madrasa Jamaliyah Logo"
+        <img src="{{ site_settings|site_logo_url }} " alt="{{ site_settings.school_name|default:'Madrasa Jamaliyah' }} Logo"
             class="brand-image img-circle elevation-3" style="opacity: .8">
         <span class="brand-text font-weight-light">Parent Panel</span>
     </a>

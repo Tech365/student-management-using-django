@@ -177,6 +177,42 @@ class CourseForm(FormSettings):
         model = Course
 
 
+class SiteSettingsForm(FormSettings):
+    def __init__(self, *args, **kwargs):
+        super(SiteSettingsForm, self).__init__(*args, **kwargs)
+
+    def clean_logo(self):
+        # Same guard/allowlist/size-cap as CustomUserForm.clean_profile_pic
+        # above, and for the same reason: editing without a new upload
+        # leaves the existing logo's stored URL *string* (not a file) in
+        # cleaned_data, per Django's FileField.clean().
+        logo = self.cleaned_data.get('logo')
+        if logo and isinstance(logo, UploadedFile):
+            ext = os.path.splitext(logo.name)[1].lower()
+            if ext not in ALLOWED_IMAGE_EXTENSIONS:
+                raise forms.ValidationError(
+                    "Unsupported image type. Use JPG, PNG, GIF, or WEBP.")
+            if logo.size > MAX_PROFILE_PIC_BYTES:
+                raise forms.ValidationError("Image must be smaller than 5MB.")
+        return logo
+
+    class Meta:
+        model = SiteSettings
+        fields = ['school_name', 'logo', 'address', 'contact_email', 'contact_phone']
+
+
+class SiteSettingsEmailForm(FormSettings):
+    def __init__(self, *args, **kwargs):
+        super(SiteSettingsEmailForm, self).__init__(*args, **kwargs)
+
+    class Meta:
+        model = SiteSettings
+        fields = ['email_host', 'email_port', 'email_host_user', 'email_host_password', 'email_use_tls']
+        # render_value=True so a failed test-email / re-visit of this step
+        # doesn't blank out a password that's already saved.
+        widgets = {'email_host_password': forms.PasswordInput(render_value=True)}
+
+
 class SubjectForm(FormSettings):
 
     def __init__(self, *args, **kwargs):

@@ -93,16 +93,40 @@ def csv_response(filename, header, rows):
 def send_notification_email(user, message):
     """Email a notification to a CustomUser. Failures (bad address, SMTP
     outage) are logged and swallowed so a broken email never blocks the
-    in-app notification or FCM push that already succeeded."""
+    in-app notification or FCM push that already succeeded.
+
+    Prefers this install's admin-configured SiteSettings SMTP fields when
+    set; falls back to the server's static settings.EMAIL_*/DEFAULT_FROM_EMAIL
+    (env vars) when they're blank - which reproduces today's behavior
+    byte-for-byte for any install that hasn't been through the onboarding
+    wizard's Email step yet."""
     if not user.email:
         return
+    from .models import SiteSettings
+    site_settings = SiteSettings.load()
+    school_name = site_settings.school_name or "Madrasa Jamaliyah"
+    connection = None
+    from_email = None
+    if site_settings.email_host:
+        from django.core.mail import get_connection
+        connection = get_connection(
+            backend='django.core.mail.backends.smtp.EmailBackend',
+            host=site_settings.email_host,
+            port=site_settings.email_port or 587,
+            username=site_settings.email_host_user or None,
+            password=site_settings.email_host_password or None,
+            use_tls=site_settings.email_use_tls,
+        )
+        if site_settings.email_host_user:
+            from_email = f"{school_name} <{site_settings.email_host_user}>"
     try:
         send_mail(
-            subject="New notification - Madrasa Jamaliyah",
+            subject=f"New notification - {school_name}",
             message=message,
-            from_email=None,  # uses DEFAULT_FROM_EMAIL
+            from_email=from_email,  # None falls back to DEFAULT_FROM_EMAIL
             recipient_list=[user.email],
             fail_silently=False,
+            connection=connection,  # None falls back to settings.EMAIL_*
         )
     except Exception:
         logger.exception('Failed to send notification email to %s', user.email)
@@ -120,10 +144,11 @@ def send_push_notification(user, message, click_action_url_name=None):
     if not user.fcm_token:
         return
     try:
+        from .models import SiteSettings
         url = "https://fcm.googleapis.com/fcm/send"
         body = {
             'notification': {
-                'title': "Madrasa Jamaliyah",
+                'title': SiteSettings.load().school_name or "Madrasa Jamaliyah",
                 'body': message,
                 'click_action': reverse(click_action_url_name) if click_action_url_name else '/',
                 'icon': static('dist/img/AdminLTELogo.png')
