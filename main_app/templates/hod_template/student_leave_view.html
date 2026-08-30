@@ -38,13 +38,16 @@
                                  
                                       
                                       {% if leave.status == 0 %}
-                                           <td> <button data-toggle = "modal" data-target = "#reply_modal" value="{{leave.id}}" class="btn btn-primary reply_open_modal">Reply</button>
+                                           <td> <button data-toggle = "modal" data-target = "#reply_modal" value="{{leave.id}}" class="btn btn-primary reply_open_modal">Reply</button></td>
 {% elif leave.status == -1 %}
 <td><span  class='badge badge-danger'>Rejected</span></td>
+{% elif leave.status == 2 %}
+<td><span  class='badge badge-dark'>Cancelled</span></td>
 {% else %}
-<td><span  class='badge badge-success'>Approved</span></td>
-
-                                            <td>{{feedback.updated_at}}</td>
+<td>
+    <span class='badge badge-success mr-1'>Approved</span>
+    <button type="button" class="btn btn-outline-danger btn-sm cancel_leave_btn" value="{{leave.id}}">Cancel</button>
+</td>
                                       {% endif %}
                                           
                                   </td>
@@ -140,6 +143,25 @@
     notifyUser("Choose Approve or Reject first", "warning")
 }
 
+          })
+
+          $(document).on('click', '.cancel_leave_btn', function () {
+              var id = $(this).val()
+              if (!confirm("Cancel this approved leave?")) { return }
+              $.ajax({
+                  url: "{% url 'view_student_leave' %}",
+                  type: 'POST',
+                  data: { id: id, status: '2' }
+              }).done(function (response) {
+                  if (response == "True") {
+                      notifyUser("Leave cancelled", "success")
+                      location.reload()
+                  } else {
+                      notifyUser("Could not cancel this leave", "error")
+                  }
+              }).fail(function () {
+                  notifyUser("An error occurred. Please try again", "error")
+              })
           })
       })
   </script>

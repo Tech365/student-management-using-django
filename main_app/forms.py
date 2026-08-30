@@ -261,16 +261,36 @@ class SessionForm(FormSettings):
         }
 
 
-class LeaveReportStaffForm(FormSettings):
+class MultiDateLeaveFormMixin:
+    """Shared by LeaveReportStaffForm/LeaveReportStudentForm - the model's
+    `date` is one date per row, but a single application can cover several
+    days at once (see staff_apply_leave/student_apply_leave/
+    parent_apply_leave, which loop `cleaned_data['dates']` and create one
+    row per date). `dates` is a plain (non-model) field fed by a flatpickr
+    "multiple" picker, which produces a single comma-separated string."""
+
+    def clean_dates(self):
+        raw = self.cleaned_data.get('dates', '')
+        values = [d.strip() for d in raw.split(',') if d.strip()]
+        if not values:
+            raise forms.ValidationError("Select at least one date.")
+        for d in values:
+            try:
+                date.fromisoformat(d)
+            except ValueError:
+                raise forms.ValidationError(f"'{d}' isn't a valid date.")
+        return values
+
+
+class LeaveReportStaffForm(MultiDateLeaveFormMixin, FormSettings):
+    dates = forms.CharField(widget=TextInput(attrs={'id': 'id_dates', 'autocomplete': 'off'}))
+
     def __init__(self, *args, **kwargs):
         super(LeaveReportStaffForm, self).__init__(*args, **kwargs)
 
     class Meta:
         model = LeaveReportStaff
-        fields = ['date', 'message']
-        widgets = {
-            'date': DateInput(attrs={'type': 'date'}),
-        }
+        fields = ['message']
 
 
 class FeedbackStaffForm(FormSettings):
@@ -283,16 +303,15 @@ class FeedbackStaffForm(FormSettings):
         fields = ['feedback']
 
 
-class LeaveReportStudentForm(FormSettings):
+class LeaveReportStudentForm(MultiDateLeaveFormMixin, FormSettings):
+    dates = forms.CharField(widget=TextInput(attrs={'id': 'id_dates', 'autocomplete': 'off'}))
+
     def __init__(self, *args, **kwargs):
         super(LeaveReportStudentForm, self).__init__(*args, **kwargs)
 
     class Meta:
         model = LeaveReportStudent
-        fields = ['date', 'message']
-        widgets = {
-            'date': DateInput(attrs={'type': 'date'}),
-        }
+        fields = ['message']
 
 
 class FeedbackStudentForm(FormSettings):

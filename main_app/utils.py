@@ -162,9 +162,12 @@ def send_push_notification(user, message, click_action_url_name=None):
         logger.exception('Failed to send push notification to %s', user.email)
 
 
+LEAVE_DECISION_VERDICTS = {1: "approved", -1: "rejected", 2: "cancelled"}
+
+
 def leave_decision_message(leave_date, status):
-    """Message text for a leave application's approve/reject decision."""
-    verdict = "approved" if status == 1 else "rejected"
+    """Message text for a leave application's approve/reject/cancel decision."""
+    verdict = LEAVE_DECISION_VERDICTS.get(status, "updated")
     return f"Your leave application for {leave_date} was {verdict}."
 
 

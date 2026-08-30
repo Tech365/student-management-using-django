@@ -147,6 +147,8 @@ urlpatterns = [
     path("staff/fcmtoken/", staff_views.staff_fcmtoken, name='staff_fcmtoken'),
     path("staff/view/notification/", staff_views.staff_view_notification,
          name="staff_view_notification"),
+    path("staff/notification/<int:notification_id>/delete/", staff_views.delete_staff_notification,
+         name="delete_staff_notification"),
     path("staff/result/add/", staff_views.staff_add_result, name='staff_add_result'),
     path("staff/result/edit/", EditResultView.as_view(),
          name='edit_student_result'),
@@ -169,6 +171,8 @@ urlpatterns = [
          name='student_fcmtoken'),
     path("student/view/notification/", student_views.student_view_notification,
          name="student_view_notification"),
+    path("student/notification/<int:notification_id>/delete/", student_views.delete_student_notification,
+         name="delete_student_notification"),
     path('student/view/result/', student_views.student_view_result,
          name='student_view_result'),
 
@@ -186,6 +190,8 @@ urlpatterns = [
          name='parent_apply_leave'),
     path("parent/view/notification/", parent_views.parent_view_notification,
          name="parent_view_notification"),
+    path("parent/notification/<int:notification_id>/delete/", parent_views.delete_parent_notification,
+         name="delete_parent_notification"),
 
     # Reports
     path("reports/attendance/", hod_views.report_attendance_summary,

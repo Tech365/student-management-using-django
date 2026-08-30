@@ -5,7 +5,7 @@ from datetime import datetime
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
 from django.core.files.storage import FileSystemStorage
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
@@ -118,6 +118,19 @@ def parent_view_notification(request):
     }
     NotificationParent.objects.filter(parent=parent, is_read=False).update(is_read=True)
     return render(request, "parent_template/parent_view_notification.html", context)
+
+
+def delete_parent_notification(request, notification_id):
+    parent = get_object_or_404(Parent, admin=request.user)
+    try:
+        # Scoped to `parent` so a parent can't delete another parent's
+        # notification by guessing an id.
+        notification = get_object_or_404(NotificationParent, id=notification_id, parent=parent)
+        notification.delete()
+        return HttpResponse(True)
+    except Exception:
+        logger.exception("Failed to delete parent notification")
+        return HttpResponse(False)
 
 
 def parent_home(request):
@@ -268,26 +281,30 @@ def parent_apply_leave(request):
     if request.method == 'POST':
         target_student = parent_can_access_student(parent, student_id)
         if target_student is None:
-            messages.error(request, "You are not authorized to apply leave for that student.")
-            return render(request, "parent_template/parent_apply_leave.html", context)
+            return JsonResponse({'error': "You are not authorized to apply leave for that student."}, status=403)
         if form.is_valid():
-            try:
-                obj = form.save(commit=False)
-                obj.student = target_student
-                obj.applied_by_parent = parent
-                obj.save()
-                message = f"{target_student} applied for leave on {obj.date}: {obj.message} (submitted by parent)"
-                # Same "every teacher of this class" fan-out student_apply_leave uses -
-                # a class can have more than one teacher.
-                teachers = Staff.objects.filter(subject__course=target_student.course).distinct()
+            message = form.cleaned_data['message']
+            # Same "every teacher of this class" fan-out student_apply_leave uses -
+            # a class can have more than one teacher.
+            teachers = Staff.objects.filter(subject__course=target_student.course).distinct()
+            created = []
+            skipped = []
+            for d in form.cleaned_data['dates']:
+                if LeaveReportStudent.objects.filter(student=target_student, date=d).exists():
+                    skipped.append(d)
+                    continue
+                try:
+                    LeaveReportStudent.objects.create(
+                        student=target_student, date=d, message=message, applied_by_parent=parent)
+                    created.append(d)
+                except Exception:
+                    logger.exception('Failed to create leave for %s on %s', target_student, d)
+                    skipped.append(d)
+                    continue
+                notif_message = f"{target_student} applied for leave on {d}: {message} (submitted by parent)"
                 for teacher in teachers:
-                    NotificationStaff.objects.create(staff=teacher, message=message)
-                    send_notification_email(teacher.admin, message)
-                messages.success(request, "Application for leave has been submitted for review")
-                return redirect(reverse('parent_apply_leave') + f'?student={target_student.id}')
-            except Exception:
-                logger.exception('Unhandled error in parent_apply_leave')
-                messages.error(request, "Could not submit")
-        else:
-            messages.error(request, "Form has errors!")
+                    NotificationStaff.objects.create(staff=teacher, message=notif_message)
+                    send_notification_email(teacher.admin, notif_message)
+            return JsonResponse({'created': created, 'skipped': skipped})
+        return JsonResponse({'errors': form.errors}, status=400)
     return render(request, "parent_template/parent_apply_leave.html", context)

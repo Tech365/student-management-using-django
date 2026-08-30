@@ -97,27 +97,36 @@ def student_apply_leave(request):
     }
     if request.method == 'POST':
         if form.is_valid():
-            try:
-                obj = form.save(commit=False)
-                obj.student = student
-                obj.save()
-                message = f"{student} applied for leave on {obj.date}: {obj.message}"
-                # Notify every teacher of this class, i.e. every staff who
-                # teaches at least one subject in it - a class can have
-                # more than one teacher. Subject.course is never null, so
-                # student.course=None naturally matches no teachers here.
-                teachers = Staff.objects.filter(subject__course=student.course).distinct()
+            # One application can cover several dates at once - each is
+            # its own LeaveReportStudent row (the model represents one
+            # date per record), created independently so one bad date
+            # can't block the rest, mirroring the per-row isolation the
+            # CSV bulk-upload views already use.
+            message = form.cleaned_data['message']
+            # Notify every teacher of this class, i.e. every staff who
+            # teaches at least one subject in it - a class can have more
+            # than one teacher. Subject.course is never null, so
+            # student.course=None naturally matches no teachers here.
+            teachers = Staff.objects.filter(subject__course=student.course).distinct()
+            created = []
+            skipped = []
+            for d in form.cleaned_data['dates']:
+                if LeaveReportStudent.objects.filter(student=student, date=d).exists():
+                    skipped.append(d)
+                    continue
+                try:
+                    LeaveReportStudent.objects.create(student=student, date=d, message=message)
+                    created.append(d)
+                except Exception:
+                    logger.exception('Failed to create leave for %s on %s', student, d)
+                    skipped.append(d)
+                    continue
+                notif_message = f"{student} applied for leave on {d}: {message}"
                 for teacher in teachers:
-                    NotificationStaff.objects.create(staff=teacher, message=message)
-                    send_notification_email(teacher.admin, message)
-                messages.success(
-                    request, "Application for leave has been submitted for review")
-                return redirect(reverse('student_apply_leave'))
-            except Exception:
-                logger.exception('Unhandled error in student_apply_leave')
-                messages.error(request, "Could not submit")
-        else:
-            messages.error(request, "Form has errors!")
+                    NotificationStaff.objects.create(staff=teacher, message=notif_message)
+                    send_notification_email(teacher.admin, notif_message)
+            return JsonResponse({'created': created, 'skipped': skipped})
+        return JsonResponse({'errors': form.errors}, status=400)
     return render(request, "student_template/student_apply_leave.html", context)
 
 
@@ -209,6 +218,19 @@ def student_view_notification(request):
     }
     NotificationStudent.objects.filter(student=student, is_read=False).update(is_read=True)
     return render(request, "student_template/student_view_notification.html", context)
+
+
+def delete_student_notification(request, notification_id):
+    student = get_object_or_404(Student, admin=request.user)
+    try:
+        # Scoped to `student` so a student can't delete another student's
+        # notification by guessing an id.
+        notification = get_object_or_404(NotificationStudent, id=notification_id, student=student)
+        notification.delete()
+        return HttpResponse(True)
+    except Exception:
+        logger.exception("Failed to delete student notification")
+        return HttpResponse(False)
 
 
 def student_view_result(request):

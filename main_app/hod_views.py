@@ -32,7 +32,7 @@ from .utils import (all_configured_school_weekdays, csv_response, grant_role,
                     session_course_ids_map, staff_class_names_map, user_roles)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
-LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected'}
+LEAVE_STATUS_LABELS = {0: 'Pending', 1: 'Approved', -1: 'Rejected', 2: 'Cancelled'}
 CHRONIC_ABSENCE_THRESHOLD = 75  # attendance % below this gets flagged in reports
 COMPLIANCE_THRESHOLD = 80  # attendance-*taking* % below this gets flagged in reports
 
@@ -1045,20 +1045,26 @@ def view_staff_leave(request):
     else:
         id = request.POST.get('id')
         status = request.POST.get('status')
-        if (status == '1'):
-            status = 1
-        else:
-            status = -1
         try:
             leave = get_object_or_404(LeaveReportStaff, id=id)
-            if leave.status != 0:
+            if status == '2':
+                # Cancelling a previously-approved leave - only valid from
+                # Approved, not from Pending/Rejected.
+                if leave.status != 1:
+                    return HttpResponse(False)
+                status = 2
+            else:
                 # Already decided - don't overwrite or send a duplicate notification.
-                return HttpResponse(False)
+                if leave.status != 0:
+                    return HttpResponse(False)
+                status = 1 if status == '1' else -1
             leave.status = status
             leave.save()
             message = leave_decision_message(leave.date, status)
             NotificationStaff.objects.create(staff=leave.staff, message=message)
             send_notification_email(leave.staff.admin, message)
+            if status == 2:
+                log_action(request, 'cancelled', 'Staff Leave', leave)
             return HttpResponse(True)
         except Exception as e:
             logger.exception("Failed to update staff leave status")
@@ -1077,18 +1083,24 @@ def view_student_leave(request):
     else:
         id = request.POST.get('id')
         status = request.POST.get('status')
-        if (status == '1'):
-            status = 1
-        else:
-            status = -1
         try:
             leave = get_object_or_404(LeaveReportStudent, id=id)
-            if leave.status != 0:
+            if status == '2':
+                # Cancelling a previously-approved leave - only valid from
+                # Approved, not from Pending/Rejected.
+                if leave.status != 1:
+                    return HttpResponse(False)
+                status = 2
+            else:
                 # Already decided - don't overwrite or send a duplicate notification.
-                return HttpResponse(False)
+                if leave.status != 0:
+                    return HttpResponse(False)
+                status = 1 if status == '1' else -1
             leave.status = status
             leave.save()
             notify_student_leave_decision(leave, status)
+            if status == 2:
+                log_action(request, 'cancelled', 'Student Leave', leave)
             return HttpResponse(True)
         except Exception as e:
             logger.exception("Failed to update student leave status")
@@ -1990,7 +2002,7 @@ def _leave_report_data(request):
     start_date = request.GET.get('start_date') or ''
     end_date = request.GET.get('end_date') or ''
 
-    status_map = {'pending': 0, 'approved': 1, 'rejected': -1}
+    status_map = {'pending': 0, 'approved': 1, 'rejected': -1, 'cancelled': 2}
 
     student_leaves = LeaveReportStudent.objects.select_related('student', 'student__admin', 'student__course')
     staff_leaves = LeaveReportStaff.objects.select_related('staff', 'staff__admin')

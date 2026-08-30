@@ -294,22 +294,27 @@ def staff_apply_leave(request):
     }
     if request.method == 'POST':
         if form.is_valid():
-            try:
-                obj = form.save(commit=False)
-                obj.staff = staff
-                obj.save()
-                message = f"{staff} applied for leave on {obj.date}: {obj.message}"
+            message = form.cleaned_data['message']
+            admins = list(CustomUser.objects.filter(admin__isnull=False))
+            created = []
+            skipped = []
+            for d in form.cleaned_data['dates']:
+                if LeaveReportStaff.objects.filter(staff=staff, date=d).exists():
+                    skipped.append(d)
+                    continue
+                try:
+                    LeaveReportStaff.objects.create(staff=staff, date=d, message=message)
+                    created.append(d)
+                except Exception:
+                    logger.exception('Failed to create leave for %s on %s', staff, d)
+                    skipped.append(d)
+                    continue
+                notif_message = f"{staff} applied for leave on {d}: {message}"
                 # Admin has no in-app notification inbox, so email only.
-                for admin_user in CustomUser.objects.filter(admin__isnull=False):
-                    send_notification_email(admin_user, message)
-                messages.success(
-                    request, "Application for leave has been submitted for review")
-                return redirect(reverse('staff_apply_leave'))
-            except Exception:
-                logger.exception('Unhandled error in staff_apply_leave')
-                messages.error(request, "Could not apply!")
-        else:
-            messages.error(request, "Form has errors!")
+                for admin_user in admins:
+                    send_notification_email(admin_user, notif_message)
+            return JsonResponse({'created': created, 'skipped': skipped})
+        return JsonResponse({'errors': form.errors}, status=400)
     return render(request, "staff_template/staff_apply_leave.html", context)
 
 
@@ -440,6 +445,19 @@ def staff_view_notification(request):
     }
     NotificationStaff.objects.filter(staff=staff, is_read=False).update(is_read=True)
     return render(request, "staff_template/staff_view_notification.html", context)
+
+
+def delete_staff_notification(request, notification_id):
+    staff = get_object_or_404(Staff, admin=request.user)
+    try:
+        # Scoped to `staff` so a teacher can't delete another teacher's
+        # notification by guessing an id.
+        notification = get_object_or_404(NotificationStaff, id=notification_id, staff=staff)
+        notification.delete()
+        return HttpResponse(True)
+    except Exception:
+        logger.exception("Failed to delete staff notification")
+        return HttpResponse(False)
 
 
 def staff_add_result(request):

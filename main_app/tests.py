@@ -1517,7 +1517,7 @@ class CourselessStudentLeaveScopingTests(TestCase):
         self.client.login(username="courseless_student@example.com", password=PASSWORD)
         mail.outbox = []
         self.client.post(reverse('student_apply_leave'), {
-            'date': '2024-06-12', 'message': 'Feeling unwell',
+            'dates': '2024-06-12', 'message': 'Feeling unwell',
         })
         self.assertFalse(NotificationStaff.objects.filter(staff=self.teacher).exists())
         self.assertEqual(len(mail.outbox), 0)
@@ -1580,9 +1580,9 @@ class LeaveNotificationTests(TestCase):
         self.client.login(username="leave_notify_student@example.com", password=PASSWORD)
         mail.outbox = []
         response = self.client.post(reverse('student_apply_leave'), {
-            'date': '2024-06-15', 'message': 'Feeling unwell',
+            'dates': '2024-06-15', 'message': 'Feeling unwell',
         })
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 200)
         notif = NotificationStaff.objects.get(staff=self.teacher)
         self.assertIn('Feeling unwell', notif.message)
         self.assertEqual(len(mail.outbox), 1)
@@ -1613,9 +1613,9 @@ class LeaveNotificationTests(TestCase):
         self.client.login(username="leave_notify_teacher@example.com", password=PASSWORD)
         mail.outbox = []
         response = self.client.post(reverse('staff_apply_leave'), {
-            'date': '2024-06-15', 'message': 'Family event',
+            'dates': '2024-06-15', 'message': 'Family event',
         })
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.admin_user.email])
         self.assertIn('Family event', mail.outbox[0].body)
@@ -1654,6 +1654,228 @@ class LeaveNotificationTests(TestCase):
         leave.refresh_from_db()
         self.assertEqual(leave.status, -1)
         self.assertEqual(len(mail.outbox), 0)
+
+
+class CancelLeaveTests(TestCase):
+    """Admin can cancel an already-approved leave (status 1 -> 2), for
+    both student and staff leave - previously an approved leave was
+    permanent. Only valid from Approved; pending/rejected leaves can't be
+    "cancelled" (they're decided via the normal Approve/Reject path)."""
+
+    def setUp(self):
+        self.course = make_course("Cancel Leave Course")
+        self.session = make_session()
+        self.teacher = make_staff("cancel_leave_teacher@example.com", self.course)
+        make_subject("Cancel Leave Subject", self.teacher, self.course)
+        self.student = make_student("cancel_leave_student@example.com", self.course, self.session)
+        make_admin("cancel_leave_admin@example.com")
+        self.client.login(username="cancel_leave_admin@example.com", password=PASSWORD)
+
+    def test_admin_can_cancel_approved_student_leave(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=1)
+        response = self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '2'})
+        self.assertEqual(response.content.decode(), 'True')
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, 2)
+
+    def test_admin_cannot_cancel_pending_student_leave(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=0)
+        response = self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '2'})
+        self.assertEqual(response.content.decode(), 'False')
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, 0)
+
+    def test_admin_cannot_cancel_rejected_student_leave(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=-1)
+        response = self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '2'})
+        self.assertEqual(response.content.decode(), 'False')
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, -1)
+
+    def test_cancelling_student_leave_notifies_student(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=1)
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '2'})
+        notif = NotificationStudent.objects.get(student=self.student)
+        self.assertIn('cancelled', notif.message)
+
+    def test_cancelled_leave_stops_excluding_student_from_attendance(self):
+        LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=1)
+        leave = LeaveReportStudent.objects.get(student=self.student)
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '2'})
+
+        self.client.logout()
+        self.client.login(username="cancel_leave_teacher@example.com", password=PASSWORD)
+        subject = Subject.objects.get(name="Cancel Leave Subject")
+        response = self.client.post(reverse('get_students'), {
+            'subject': subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        data = {row['id']: row['on_leave'] for row in json.loads(response.json())['students']}
+        self.assertFalse(data[self.student.id])
+
+    def test_admin_can_cancel_approved_staff_leave(self):
+        leave = LeaveReportStaff.objects.create(
+            staff=self.teacher, date=VALID_ATTENDANCE_DATE, message="Family event", status=1)
+        response = self.client.post(reverse('view_staff_leave'), {'id': leave.id, 'status': '2'})
+        self.assertEqual(response.content.decode(), 'True')
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, 2)
+
+    def test_admin_cannot_cancel_pending_staff_leave(self):
+        leave = LeaveReportStaff.objects.create(
+            staff=self.teacher, date=VALID_ATTENDANCE_DATE, message="Family event", status=0)
+        response = self.client.post(reverse('view_staff_leave'), {'id': leave.id, 'status': '2'})
+        self.assertEqual(response.content.decode(), 'False')
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, 0)
+
+    def test_cancelling_staff_leave_notifies_staff(self):
+        leave = LeaveReportStaff.objects.create(
+            staff=self.teacher, date=VALID_ATTENDANCE_DATE, message="Family event", status=1)
+        self.client.post(reverse('view_staff_leave'), {'id': leave.id, 'status': '2'})
+        notif = NotificationStaff.objects.get(staff=self.teacher, message__icontains="cancelled")
+        self.assertIsNotNone(notif)
+
+    def test_cancelled_leave_shown_correctly_in_decision_view(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=1)
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '2'})
+        response = self.client.get(reverse('view_student_leave'))
+        self.assertContains(response, 'Cancelled')
+        self.assertNotContains(response, 'Approved')
+
+
+class MultiDateLeaveApplicationTests(TestCase):
+    """student_apply_leave/staff_apply_leave/parent_apply_leave now accept
+    several dates in one submission - each becomes its own
+    LeaveReportStudent/LeaveReportStaff row (the model is still one date
+    per record). A date that already has a request (any status) is
+    skipped, not duplicated."""
+
+    def setUp(self):
+        self.course = make_course("Multi Date Leave Course")
+        self.session = make_session()
+        self.teacher = make_staff("multidate_teacher@example.com", self.course)
+        make_subject("Multi Date Subject", self.teacher, self.course)
+        self.student = make_student("multidate_student@example.com", self.course, self.session)
+
+    def test_student_multi_date_creates_one_row_per_date(self):
+        self.client.login(username="multidate_student@example.com", password=PASSWORD)
+        response = self.client.post(reverse('student_apply_leave'), {
+            'dates': '2024-06-01, 2024-06-02, 2024-06-03', 'message': 'Trip',
+        })
+        data = response.json()
+        self.assertEqual(len(data['created']), 3)
+        self.assertEqual(LeaveReportStudent.objects.filter(student=self.student, message='Trip').count(), 3)
+
+    def test_student_duplicate_date_is_skipped_not_duplicated(self):
+        self.client.login(username="multidate_student@example.com", password=PASSWORD)
+        LeaveReportStudent.objects.create(student=self.student, date='2024-06-01', message='Existing')
+        response = self.client.post(reverse('student_apply_leave'), {
+            'dates': '2024-06-01, 2024-06-02', 'message': 'Trip',
+        })
+        data = response.json()
+        self.assertEqual(data['created'], ['2024-06-02'])
+        self.assertEqual(data['skipped'], ['2024-06-01'])
+        self.assertEqual(LeaveReportStudent.objects.filter(student=self.student, date='2024-06-01').count(), 1)
+
+    def test_staff_multi_date_creates_one_row_per_date(self):
+        self.client.login(username="multidate_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('staff_apply_leave'), {
+            'dates': '2024-06-01,2024-06-02', 'message': 'Conference',
+        })
+        data = response.json()
+        self.assertEqual(len(data['created']), 2)
+        self.assertEqual(LeaveReportStaff.objects.filter(staff=self.teacher, message='Conference').count(), 2)
+
+    def test_parent_multi_date_on_behalf_of_child(self):
+        parent_admin = make_staff("multidate_parent@example.com", self.course).admin
+        grant_role(parent_admin, '4', contact_number='5551234')
+        parent = parent_admin.parent
+        ParentStudentLink.objects.create(
+            parent=parent, student=self.student, relationship='Mother',
+            date_of_birth='2010-01-01', status=1)
+        self.client.login(username="multidate_parent@example.com", password=PASSWORD)
+        s = self.client.session
+        s['active_role'] = '4'
+        s.save()
+        response = self.client.post(reverse('parent_apply_leave'), {
+            'student': self.student.id, 'dates': '2024-06-01,2024-06-02', 'message': 'Family trip',
+        })
+        data = response.json()
+        self.assertEqual(len(data['created']), 2)
+        self.assertEqual(
+            LeaveReportStudent.objects.filter(student=self.student, applied_by_parent=parent).count(), 2)
+
+    def test_invalid_date_in_list_rejected_by_form(self):
+        self.client.login(username="multidate_student@example.com", password=PASSWORD)
+        response = self.client.post(reverse('student_apply_leave'), {
+            'dates': 'not-a-date', 'message': 'Trip',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('errors', response.json())
+
+
+class NotificationDeleteTests(TestCase):
+    """A user can delete their own notifications - previously no delete
+    path existed at all. Scoped to the owner, same as every other
+    ownership check in this codebase, so one user can't delete another's
+    notification by guessing an id."""
+
+    def test_staff_can_delete_own_notification(self):
+        staff = make_staff("delete_notif_staff@example.com", make_course("Delete Notif Staff Course"))
+        notif = NotificationStaff.objects.create(staff=staff, message="Hello")
+        self.client.login(username="delete_notif_staff@example.com", password=PASSWORD)
+        response = self.client.post(reverse('delete_staff_notification', args=[notif.id]))
+        self.assertEqual(response.content.decode(), 'True')
+        self.assertFalse(NotificationStaff.objects.filter(id=notif.id).exists())
+
+    def test_staff_cannot_delete_another_staffs_notification(self):
+        owner = make_staff("delete_notif_owner@example.com", make_course("Delete Notif Owner Course"))
+        intruder_course = make_course("Delete Notif Intruder Course")
+        make_staff("delete_notif_intruder@example.com", intruder_course)
+        notif = NotificationStaff.objects.create(staff=owner, message="Hello")
+        self.client.login(username="delete_notif_intruder@example.com", password=PASSWORD)
+        response = self.client.post(reverse('delete_staff_notification', args=[notif.id]))
+        self.assertEqual(response.content.decode(), 'False')
+        self.assertTrue(NotificationStaff.objects.filter(id=notif.id).exists())
+
+    def test_student_can_delete_own_notification(self):
+        course = make_course("Delete Notif Student Course")
+        student = make_student("delete_notif_student@example.com", course, make_session())
+        notif = NotificationStudent.objects.create(student=student, message="Hello")
+        self.client.login(username="delete_notif_student@example.com", password=PASSWORD)
+        response = self.client.post(reverse('delete_student_notification', args=[notif.id]))
+        self.assertEqual(response.content.decode(), 'True')
+        self.assertFalse(NotificationStudent.objects.filter(id=notif.id).exists())
+
+    def test_student_cannot_delete_another_students_notification(self):
+        course = make_course("Delete Notif Student Scope Course")
+        session = make_session()
+        owner = make_student("delete_notif_student_owner@example.com", course, session)
+        make_student("delete_notif_student_intruder@example.com", course, session)
+        notif = NotificationStudent.objects.create(student=owner, message="Hello")
+        self.client.login(username="delete_notif_student_intruder@example.com", password=PASSWORD)
+        response = self.client.post(reverse('delete_student_notification', args=[notif.id]))
+        self.assertEqual(response.content.decode(), 'False')
+        self.assertTrue(NotificationStudent.objects.filter(id=notif.id).exists())
+
+    def test_parent_can_delete_own_notification(self):
+        parent_admin = make_staff("delete_notif_parent@example.com", make_course("Delete Notif Parent Course")).admin
+        grant_role(parent_admin, '4', contact_number='5551234')
+        parent = parent_admin.parent
+        notif = NotificationParent.objects.create(parent=parent, message="Hello")
+        self.client.login(username="delete_notif_parent@example.com", password=PASSWORD)
+        s = self.client.session
+        s['active_role'] = '4'
+        s.save()
+        response = self.client.post(reverse('delete_parent_notification', args=[notif.id]))
+        self.assertEqual(response.content.decode(), 'True')
+        self.assertFalse(NotificationParent.objects.filter(id=notif.id).exists())
 
 
 class ResultsReportTests(TestCase):
@@ -2189,9 +2411,9 @@ class ParentFeatureTests(TestCase):
 
         self.client.login(username="new_parent@example.com", password=PASSWORD)
         response = self.client.post(reverse('parent_apply_leave'), {
-            'student': self.student.id, 'date': '2024-06-01', 'message': 'Family trip',
+            'student': self.student.id, 'dates': '2024-06-01', 'message': 'Family trip',
         })
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 200)
         self.assertTrue(LeaveReportStudent.objects.filter(student=self.student, message='Family trip').exists())
         self.assertTrue(NotificationStaff.objects.filter(staff=teacher).exists())
 
@@ -2284,7 +2506,7 @@ class ParentNotificationTests(TestCase):
 
         self.client.login(username="notif_parent@example.com", password=PASSWORD)
         self.client.post(reverse('parent_apply_leave'), {
-            'student': self.student.id, 'date': '2024-06-01', 'message': 'Family trip',
+            'student': self.student.id, 'dates': '2024-06-01', 'message': 'Family trip',
         })
         leave = LeaveReportStudent.objects.get(student=self.student)
         self.assertEqual(leave.applied_by_parent, self.parent)
@@ -2305,7 +2527,7 @@ class ParentNotificationTests(TestCase):
 
         self.client.login(username="notif_parent@example.com", password=PASSWORD)
         self.client.post(reverse('parent_apply_leave'), {
-            'student': self.student.id, 'date': '2024-06-01', 'message': 'Family trip',
+            'student': self.student.id, 'dates': '2024-06-01', 'message': 'Family trip',
         })
         leave = LeaveReportStudent.objects.get(student=self.student)
         self.client.logout()
@@ -2332,7 +2554,7 @@ class ParentNotificationTests(TestCase):
         must not error out or create a stray NotificationParent."""
         student_user = self.student.admin
         self.client.login(username=student_user.email, password=PASSWORD)
-        self.client.post(reverse('student_apply_leave'), {'date': '2024-07-01', 'message': 'Sick'})
+        self.client.post(reverse('student_apply_leave'), {'dates': '2024-07-01', 'message': 'Sick'})
         leave = LeaveReportStudent.objects.get(student=self.student, date='2024-07-01')
         self.assertIsNone(leave.applied_by_parent)
         self.client.logout()

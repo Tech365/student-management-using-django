@@ -637,3 +637,19 @@ table.dataTable.dtr-inline.collapsed > tbody > tr.parent > th:first-child:before
         border: none !important;
     }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Login-style pages (login, choose-role, parent registration, ...) -      */
+/* AdminLTE's .login-page/.register-page fixes height: 100vh to vertically */
+/* center short content, but a fixed height doesn't grow for content       */
+/* taller than the viewport - the parent registration form (multiple      */
+/* children, address, etc.) overflows it, and since the container can't   */
+/* grow, the overflow paints outside the page's scrollable area instead   */
+/* of the page just growing taller, clipping the top of the form off-     */
+/* screen with no way to scroll to it. min-height keeps every short page  */
+/* centered exactly as before, but lets a tall one grow and scroll.       */
+/* ---------------------------------------------------------------------- */
+.login-page, .register-page {
+    height: auto;
+    min-height: 100vh;
+}

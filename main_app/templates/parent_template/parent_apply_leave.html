@@ -30,7 +30,8 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <form method="post">
+                        <p class="text-muted">Pick one or more dates - each becomes its own leave request.</p>
+                        <form method="post" id="apply_leave_form">
                             {% csrf_token %}
                             <input type="hidden" name="student" value="{{ active_student.id }}">
                             {% for field in form %}
@@ -68,6 +69,8 @@
                                     <span class="badge badge-warning">Pending</span>
                                     {% elif leave.status == 1 %}
                                     <span class="badge badge-success">Accepted</span>
+                                    {% elif leave.status == 2 %}
+                                    <span class="badge badge-dark">Cancelled</span>
                                     {% else %}
                                     <span class="badge badge-danger">Rejected</span>
                                     {% endif %}
@@ -91,6 +94,38 @@
         $("#kid_switcher").on("change", function () {
             window.location.href = "{% url 'parent_apply_leave' %}?student=" + $(this).val();
         });
+
+        flatpickr("#id_dates", { mode: "multiple", dateFormat: "Y-m-d", altInput: true, altFormat: "M j, Y" })
+
+        $("#apply_leave_form").on("submit", function (e) {
+            e.preventDefault()
+            var $form = $(this)
+            var $btn = $form.find("button[type=submit]")
+            $btn.prop("disabled", true)
+            $.ajax({
+                url: "{% url 'parent_apply_leave' %}",
+                type: "POST",
+                data: $form.serialize()
+            }).done(function (response) {
+                if (response.error) {
+                    notifyUser(response.error, "error")
+                    return
+                }
+                if (response.errors) {
+                    notifyUser("Please fix the errors and try again", "error")
+                    return
+                }
+                var parts = []
+                if (response.created.length) { parts.push(response.created.length + " date(s) submitted") }
+                if (response.skipped.length) { parts.push(response.skipped.length + " already had a request") }
+                notifyUser(parts.join(", ") || "Nothing to submit", response.created.length ? "success" : "warning")
+                if (response.created.length) { location.reload() }
+            }).fail(function () {
+                notifyUser("Could not submit leave application", "error")
+            }).always(function () {
+                $btn.prop("disabled", false)
+            })
+        })
     });
 </script>
 {% endblock custom_js %}

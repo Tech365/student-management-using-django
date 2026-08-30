@@ -37,13 +37,13 @@
                                   <td>{{leave.created_at}}</td>
 
                                       {% if leave.status == 0 %}
-                                           <td> <button data-toggle = "modal" data-target = "#reply_modal" value="{{leave.id}}" class="btn btn-primary reply_open_modal">Reply</button>
+                                           <td> <button data-toggle = "modal" data-target = "#reply_modal" value="{{leave.id}}" class="btn btn-primary reply_open_modal">Reply</button></td>
 {% elif leave.status == -1 %}
 <td><span  class='badge badge-danger'>Rejected</span></td>
+{% elif leave.status == 2 %}
+<td><span  class='badge badge-dark'>Cancelled</span></td>
 {% else %}
 <td><span  class='badge badge-success'>Approved</span></td>
-
-                                            <td>{{feedback.updated_at}}</td>
                                       {% endif %}
 
                                   </td>

@@ -30,6 +30,7 @@
                       <th>SN</th>
                       <th>Date</th>
                       <th>Message</th>
+                      <th></th>
                   </tr>
                   {% for notification in  notifications %}
                     <tr class="{% if not notification.is_read %}font-weight-bold{% endif %}">
@@ -40,6 +41,11 @@
                             {% if not notification.is_read %}
                             <span class="badge badge-danger ml-1">New</span>
                             {% endif %}
+                        </td>
+                        <td class="text-right">
+                            <button type="button" class="btn btn-outline-secondary btn-sm delete-notification" data-id="{{ notification.id }}">
+                                <i data-lucide="trash-2"></i>
+                            </button>
                         </td>
                     </tr>
                   {% endfor %}
@@ -58,4 +64,17 @@
 </section>
 {% endblock content %}
 
-
+{% block custom_js %}
+<script>
+    $(document).on('click', '.delete-notification', function () {
+        var $row = $(this).closest('tr')
+        var id = $(this).data('id')
+        var url = "{% url 'delete_staff_notification' 0 %}".replace('0/delete/', id + '/delete/')
+        $.ajax({ url: url, type: 'POST' })
+            .done(function (response) {
+                if (response == 'True') { $row.fadeOut(200, function () { $row.remove() }) }
+                else { notifyUser("Could not delete notification", "error") }
+            }).fail(function () { notifyUser("Could not delete notification", "error") })
+    })
+</script>
+{% endblock custom_js %}
