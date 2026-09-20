@@ -130,6 +130,14 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    {% url 'manage_secondary_enrollment' as manage_secondary_enrollment %}
+                    <a href="{{manage_secondary_enrollment}}"
+                        class="nav-link {% if manage_secondary_enrollment == request.path %} active {% endif %}">
+                        <i data-lucide="layers" class="nav-icon text-warning"></i>
+                        <p>Class Enrollment</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     {% url 'add_subject' as add_subject %}
                     <a href="{{add_subject}}" class="nav-link {% if add_subject == request.path %} active {% endif %}">
                         <i data-lucide="square-plus" class="nav-icon text-warning"></i>
@@ -170,6 +178,13 @@
                 </li>
 
                 <li class="nav-header">ATTENDANCE</li>
+                <li class="nav-item">
+                    {% url 'admin_take_attendance' as admin_take_attendance %}
+                    <a href="{{admin_take_attendance}}" class="nav-link {% if admin_take_attendance == request.path %} active {% endif %}">
+                        <i data-lucide="clipboard-list" class="nav-icon text-success"></i>
+                        <p>Take Attendance</p>
+                    </a>
+                </li>
                 <li class="nav-item">
                     {% url 'admin_view_attendance' as admin_view_attendance %}
                     <a href="{{admin_view_attendance}}" class="nav-link {% if admin_view_attendance == request.path %} active {% endif %}">
@@ -336,6 +351,13 @@
                     <a href="{{staff_update_attendance}}" class="nav-link {% if staff_update_attendance == request.path %} active {% endif %}">
                         <i data-lucide="clipboard-check" class="nav-icon text-success"></i>
                         <p>Update Attendance</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    {% url 'staff_report_attendance_not_taken' as staff_report_attendance_not_taken %}
+                    <a href="{{staff_report_attendance_not_taken}}" class="nav-link {% if staff_report_attendance_not_taken == request.path %} active {% endif %}">
+                        <i data-lucide="triangle-alert" class="nav-icon text-success"></i>
+                        <p>Attendance Not Taken</p>
                     </a>
                 </li>
 

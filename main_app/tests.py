@@ -16,7 +16,8 @@ from .models import (Attendance, AttendanceReport, AuditLog, Course,
                      NotificationParent, NotificationStaff,
                      NotificationStudent, Parent, ParentStudentLink, Session,
                      SiteSettings, Staff, Student, StudentResult, Subject)
-from .utils import (grant_role, is_school_day, latest_school_day,
+from .utils import (apply_default_secondary_enrollment, grant_role,
+                    is_school_day, latest_school_day, session_course_ids_map,
                     take_attendance_date_error, user_roles)
 
 PASSWORD = "TestPass9137!"  # must pass AUTH_PASSWORD_VALIDATORS - some tests submit it through a real form
@@ -544,6 +545,57 @@ class TakeAttendanceDateRestrictionTests(TestCase):
             'subject': self.subject.id, 'session': self.session.id, 'date': candidate.isoformat(),
         })
         self.assertEqual(response.status_code, 400)
+
+
+class DeactivatedStudentAttendanceTests(TestCase):
+    """A deactivated student (CustomUser.is_active=False, see
+    hod_views.toggle_student_status) shouldn't still be markable in the
+    Take Attendance roster, Update/View Attendance, or the admin's read-
+    only attendance view - previously none of the three roster queries
+    filtered on admin__is_active at all, unlike the same check already
+    made for parent_register's student search."""
+
+    def setUp(self):
+        self.course = make_course("Deactivated Student Course")
+        self.session = make_session()
+        self.staff = make_staff("deactivated_student_teacher@example.com", self.course)
+        self.subject = make_subject("Deactivated Student Subject", self.staff, self.course)
+        self.active_student = make_student("deactivated_student_active@example.com", self.course, self.session)
+        self.inactive_student = make_student("deactivated_student_inactive@example.com", self.course, self.session)
+        self.inactive_student.admin.is_active = False
+        self.inactive_student.admin.save()
+
+    def test_get_students_excludes_deactivated_student(self):
+        self.client.login(username="deactivated_student_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        ids = [row['id'] for row in json.loads(response.json())['students']]
+        self.assertIn(self.active_student.id, ids)
+        self.assertNotIn(self.inactive_student.id, ids)
+
+    def test_get_student_attendance_excludes_deactivated_student(self):
+        attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=VALID_ATTENDANCE_DATE)
+        self.client.login(username="deactivated_student_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_student_attendance'), {
+            'attendance_date_id': attendance.id,
+        })
+        ids = [row['id'] for row in json.loads(response.json())]
+        self.assertIn(self.active_student.admin_id, ids)
+        self.assertNotIn(self.inactive_student.admin_id, ids)
+
+    def test_get_admin_attendance_excludes_deactivated_student(self):
+        make_admin("deactivated_student_admin@example.com")
+        attendance = Attendance.objects.create(
+            session=self.session, subject=self.subject, date=VALID_ATTENDANCE_DATE)
+        self.client.login(username="deactivated_student_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_admin_attendance'), {
+            'subject': self.subject.id, 'session': self.session.id, 'attendance_date_id': attendance.id,
+        })
+        names = [row['name'] for row in json.loads(response.json())]
+        self.assertIn(str(self.active_student), names)
+        self.assertNotIn(str(self.inactive_student), names)
 
 
 class StaffViewAttendanceTests(TestCase):
@@ -1165,6 +1217,363 @@ class AttendanceNotTakenReportTests(TestCase):
         self.client.logout()
         self.client.login(username="not_taken_teacher@example.com", password=PASSWORD)
         response = self.client.get(reverse('report_attendance_not_taken'))
+        self.assertRedirects(response, reverse('staff_home'))
+
+
+class StaffAttendanceNotTakenReportTests(TestCase):
+    """Teacher-scoped version of the above - only this teacher's own
+    subjects (co-teaching aware), not the whole school's."""
+
+    def setUp(self):
+        self.course = make_course("Staff Not Taken Course")
+        self.session = make_session()
+        self.staff = make_staff("staff_not_taken_teacher@example.com", self.course)
+        self.taken_subject = make_subject("Staff Marked Subject", self.staff, self.course)
+        self.not_taken_subject = make_subject("Staff Unmarked Subject", self.staff, self.course)
+        Attendance.objects.create(session=self.session, subject=self.taken_subject, date=datetime.date(2024, 6, 15))
+        self.client.login(username="staff_not_taken_teacher@example.com", password=PASSWORD)
+
+    def test_lists_only_the_subject_without_attendance(self):
+        response = self.client.get(reverse('staff_report_attendance_not_taken'), {'date': '2024-06-15'})
+        self.assertEqual(response.status_code, 200)
+        subjects = [row['subject'] for row in response.context['not_taken']]
+        self.assertIn('Staff Unmarked Subject', subjects)
+        self.assertNotIn('Staff Marked Subject', subjects)
+
+    def test_excludes_other_teachers_subjects(self):
+        other_course = make_course("Other Staff Not Taken Course")
+        other_staff = make_staff("other_staff_not_taken_teacher@example.com", other_course)
+        make_subject("Other Teacher Subject", other_staff, other_course)
+
+        response = self.client.get(reverse('staff_report_attendance_not_taken'), {'date': '2024-06-16'})
+        subjects = [row['subject'] for row in response.context['not_taken']]
+        self.assertIn('Staff Unmarked Subject', subjects)
+        self.assertNotIn('Other Teacher Subject', subjects)
+
+    def test_class_filter_dropdown_scoped_to_own_classes(self):
+        other_course = make_course("Other Staff Not Taken Course 2")
+        make_staff("unrelated_teacher@example.com", other_course)
+        response = self.client.get(reverse('staff_report_attendance_not_taken'))
+        course_names = [c.name for c in response.context['courses']]
+        self.assertIn('Staff Not Taken Course', course_names)
+        self.assertNotIn('Other Staff Not Taken Course 2', course_names)
+
+    def test_co_taught_subject_visible_to_both_teachers(self):
+        co_teacher = make_staff("co_not_taken_teacher@example.com", self.course)
+        shared_subject = make_subject("Shared Not Taken Subject", [self.staff, co_teacher], self.course)
+        self.client.logout()
+        self.client.login(username="co_not_taken_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('staff_report_attendance_not_taken'), {'date': '2024-06-16'})
+        subjects = [row['subject'] for row in response.context['not_taken']]
+        self.assertIn('Shared Not Taken Subject', subjects)
+
+
+class SecondaryEnrollmentHelperTests(TestCase):
+    """apply_default_secondary_enrollment - a no-op until an admin
+    configures SiteSettings.default_secondary_course, then auto-enrolls a
+    fresh Student / auto-assigns a fresh Staff to that course's subjects."""
+
+    def setUp(self):
+        self.course = make_course("Secondary Helper Course")
+        self.miqaats = make_course("Miqaats")
+        self.session = make_session()
+
+    def test_noop_when_no_default_configured(self):
+        student = make_student("secondary_helper_student@example.com", self.course, self.session)
+        apply_default_secondary_enrollment(student.admin)
+        self.assertEqual(student.secondary_courses.count(), 0)
+
+    def test_enrolls_new_student_in_default_course(self):
+        site_settings = SiteSettings.load()
+        site_settings.default_secondary_course = self.miqaats
+        site_settings.save()
+        student = make_student("secondary_helper_student2@example.com", self.course, self.session)
+        apply_default_secondary_enrollment(student.admin)
+        self.assertIn(self.miqaats, student.secondary_courses.all())
+
+    def test_assigns_new_teacher_to_default_courses_subjects(self):
+        site_settings = SiteSettings.load()
+        site_settings.default_secondary_course = self.miqaats
+        site_settings.save()
+        subject = make_subject("Milaad Imaam uz-Zaman", [], self.miqaats)
+        staff = make_staff("secondary_helper_teacher@example.com", self.course)
+        apply_default_secondary_enrollment(staff.admin)
+        self.assertIn(staff, subject.staff.all())
+
+
+class SecondaryEnrollmentCreationHooksTests(TestCase):
+    """The default secondary course/subjects get picked up automatically
+    at every point a new Student/Staff row is created - add_student,
+    add_staff, and both CSV bulk-upload flows."""
+
+    def setUp(self):
+        make_admin("secondary_hooks_admin@example.com")
+        self.client.login(username="secondary_hooks_admin@example.com", password=PASSWORD)
+        self.course = make_course("Secondary Hooks Course")
+        self.session = make_session()
+        self.miqaats = make_course("Miqaats Hooks")
+        self.miqaats_subject = make_subject("Miqaats Hooks Subject", [], self.miqaats)
+        site_settings = SiteSettings.load()
+        site_settings.default_secondary_course = self.miqaats
+        site_settings.save()
+
+    def test_add_student_auto_enrolls_in_default(self):
+        self.client.post(reverse('add_student'), {
+            'first_name': 'New', 'last_name': 'Student', 'email': 'hooks_new_student@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD,
+            'course': self.course.id, 'session': self.session.id,
+            'profile_pic': make_image_file(),
+        })
+        student = Student.objects.get(admin__email='hooks_new_student@example.com')
+        self.assertIn(self.miqaats, student.secondary_courses.all())
+
+    def test_add_staff_auto_assigned_to_default_subjects(self):
+        self.client.post(reverse('add_staff'), {
+            'first_name': 'New', 'last_name': 'Teacher', 'email': 'hooks_new_teacher@example.com',
+            'gender': 'M', 'address': 'addr', 'password': PASSWORD,
+            'profile_pic': make_image_file(),
+        })
+        staff = Staff.objects.get(admin__email='hooks_new_teacher@example.com')
+        self.assertIn(staff, self.miqaats_subject.staff.all())
+
+    def test_bulk_upload_students_auto_enrolls_in_default(self):
+        csv_content = (
+            "first_name,last_name,email,gender,address,class,session_start_year,session_end_year\n"
+            f"Bulk,Student,hooks_bulk_student@example.com,M,addr,{self.course.name},"
+            f"{self.session.start_year},{self.session.end_year}\n"
+        )
+        self.client.post(reverse('bulk_upload_students'), {'csv_file': csv_file(csv_content)})
+        student = Student.objects.get(admin__email='hooks_bulk_student@example.com')
+        self.assertIn(self.miqaats, student.secondary_courses.all())
+
+    def test_bulk_upload_staff_auto_assigned_to_default_subjects(self):
+        csv_content = "first_name,last_name,email,gender,address\nBulk,Teacher,hooks_bulk_teacher@example.com,M,addr\n"
+        self.client.post(reverse('bulk_upload_staff'), {'csv_file': csv_file(csv_content)})
+        staff = Staff.objects.get(admin__email='hooks_bulk_teacher@example.com')
+        self.assertIn(staff, self.miqaats_subject.staff.all())
+
+
+class ManageSecondaryEnrollmentViewTests(TestCase):
+    """The bulk enrollment screen - selecting all students and saving is
+    exactly the "enroll every existing student" backfill."""
+
+    def setUp(self):
+        make_admin("enrollment_admin@example.com")
+        self.client.login(username="enrollment_admin@example.com", password=PASSWORD)
+        self.course = make_course("Enrollment Primary Course")
+        self.session = make_session()
+        self.miqaats = make_course("Miqaats Enrollment")
+        self.student_a = make_student("enrollment_student_a@example.com", self.course, self.session)
+        self.student_b = make_student("enrollment_student_b@example.com", self.course, self.session)
+
+    def test_get_shows_course_picker_and_no_table_until_selected(self):
+        response = self.client.get(reverse('manage_secondary_enrollment'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context['selected_course'])
+
+    def test_selecting_all_students_enrolls_everyone(self):
+        self.client.post(reverse('manage_secondary_enrollment'), {
+            'course': self.miqaats.id,
+            'student_ids': [str(self.student_a.id), str(self.student_b.id)],
+        })
+        self.assertIn(self.miqaats, self.student_a.secondary_courses.all())
+        self.assertIn(self.miqaats, self.student_b.secondary_courses.all())
+
+    def test_unchecking_a_student_removes_them(self):
+        self.student_a.secondary_courses.add(self.miqaats)
+        self.student_b.secondary_courses.add(self.miqaats)
+        self.client.post(reverse('manage_secondary_enrollment'), {
+            'course': self.miqaats.id,
+            'student_ids': [str(self.student_a.id)],
+        })
+        self.assertIn(self.miqaats, self.student_a.secondary_courses.all())
+        self.assertNotIn(self.miqaats, self.student_b.secondary_courses.all())
+
+    def test_set_default_persists_to_site_settings(self):
+        self.client.post(reverse('manage_secondary_enrollment'), {
+            'course': self.miqaats.id, 'set_default': 'on',
+            'student_ids': [str(self.student_a.id)],
+        })
+        self.assertEqual(SiteSettings.load().default_secondary_course, self.miqaats)
+
+    def test_unchecking_default_clears_site_settings(self):
+        site_settings = SiteSettings.load()
+        site_settings.default_secondary_course = self.miqaats
+        site_settings.save()
+        self.client.post(reverse('manage_secondary_enrollment'), {
+            'course': self.miqaats.id,
+            'student_ids': [str(self.student_a.id)],
+        })
+        self.assertIsNone(SiteSettings.load().default_secondary_course)
+
+    def test_staff_cannot_reach_it(self):
+        self.client.logout()
+        make_staff("enrollment_teacher@example.com", self.course)
+        self.client.login(username="enrollment_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('manage_secondary_enrollment'))
+        self.assertRedirects(response, reverse('staff_home'))
+
+
+class SecondaryEnrollmentAttendanceTests(TestCase):
+    """A student secondarily enrolled in a class (e.g. a cross-cutting
+    one like "Miqaats" that no one has as their PRIMARY course) must
+    still show up when a teacher takes/views attendance for it - and the
+    Class->Session cascade must not dead-end for a purely-secondary
+    class (session_course_ids_map's blind spot)."""
+
+    def setUp(self):
+        self.primary_course = make_course("Secondary Attendance Primary")
+        self.miqaats = make_course("Miqaats Attendance")
+        self.session = make_session()
+        self.teacher = make_staff("secondary_attendance_teacher@example.com", self.primary_course)
+        self.miqaats_subject = make_subject("Miqaats Attendance Subject", self.teacher, self.miqaats)
+        self.student = make_student("secondary_attendance_student@example.com", self.primary_course, self.session)
+        self.student.secondary_courses.add(self.miqaats)
+        self.client.login(username="secondary_attendance_teacher@example.com", password=PASSWORD)
+
+    def test_session_course_ids_map_includes_purely_secondary_course(self):
+        mapping = session_course_ids_map()
+        self.assertIn(self.miqaats.id, mapping.get(self.session.id, set()))
+
+    def test_get_students_includes_secondarily_enrolled_student(self):
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.miqaats_subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        ids = [row['id'] for row in json.loads(response.json())['students']]
+        self.assertEqual(ids, [self.student.id])  # no duplicate row either
+
+    def test_get_admin_attendance_includes_secondarily_enrolled_student(self):
+        make_admin("secondary_attendance_admin@example.com")
+        attendance = Attendance.objects.create(
+            session=self.session, subject=self.miqaats_subject, date=VALID_ATTENDANCE_DATE)
+        self.client.logout()
+        self.client.login(username="secondary_attendance_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_admin_attendance'), {
+            'subject': self.miqaats_subject.id, 'session': self.session.id, 'attendance_date_id': attendance.id,
+        })
+        names = [row['name'] for row in json.loads(response.json())]
+        self.assertEqual(names, [str(self.student)])
+
+    def test_student_not_shown_for_unrelated_class(self):
+        other_course = make_course("Unrelated Secondary Course")
+        other_subject = make_subject("Unrelated Secondary Subject", self.teacher, other_course)
+        response = self.client.post(reverse('get_students'), {
+            'subject': other_subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        ids = [row['id'] for row in json.loads(response.json())['students']]
+        self.assertEqual(ids, [])
+
+    def test_can_save_attendance_for_purely_secondary_enrolled_student(self):
+        # Regression: save_attendance's per-student scoping used to check
+        # only the student's PRIMARY course, so saving attendance for a
+        # class where every student is only secondarily enrolled (like
+        # Miqaats, which nobody has as their primary course) silently
+        # failed entirely - every student 404'd inside the same
+        # try/except, aborting the whole save.
+        response = self.client.post(reverse('save_attendance'), {
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.miqaats_subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(response.content, b"OK")
+        report = AttendanceReport.objects.get(student=self.student)
+        self.assertTrue(report.status)
+
+
+class AdminTakeAttendanceTests(TestCase):
+    """Admin can take attendance for ANY class/subject - not scoped to a
+    teacher (admin has no Staff row at all) - for covering a class whose
+    teacher was absent. Deliberately exempt from the "latest school day"
+    floor that restricts the teacher-facing screen, since the whole point
+    is catching up on a day that's already slipped past it."""
+
+    def setUp(self):
+        make_admin("admin_take_attendance_admin@example.com")
+        self.client.login(username="admin_take_attendance_admin@example.com", password=PASSWORD)
+        self.course = make_course("Admin Take Attendance Course")
+        self.session = make_session()
+        self.teacher = make_staff("admin_take_attendance_teacher@example.com", self.course)
+        self.subject = make_subject("Admin Take Attendance Subject", self.teacher, self.course)
+        self.student = make_student("admin_take_attendance_student@example.com", self.course, self.session)
+
+    def test_admin_can_fetch_roster_for_a_teachers_subject(self):
+        response = self.client.post(reverse('admin_get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        ids = [row['id'] for row in json.loads(response.json())['students']]
+        self.assertEqual(ids, [self.student.id])
+
+    def test_admin_can_save_attendance_for_a_teachers_subject(self):
+        response = self.client.post(reverse('admin_save_attendance'), {
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(response.content, b"OK")
+        report = AttendanceReport.objects.get(student=self.student)
+        self.assertTrue(report.status)
+        attendance = Attendance.objects.get(subject=self.subject, session=self.session, date=VALID_ATTENDANCE_DATE)
+        self.assertIsNone(attendance.taken_by)
+
+    def test_admin_exempt_from_latest_school_day_floor(self):
+        # A date well before today - a teacher's own Take Attendance
+        # would reject this via take_attendance_date_error, but admin's
+        # version deliberately doesn't apply that floor.
+        old_date = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
+        response = self.client.post(reverse('admin_get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': old_date,
+        })
+        self.assertEqual(response.status_code, 200)
+        save_response = self.client.post(reverse('admin_save_attendance'), {
+            'date': old_date, 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(save_response.content, b"OK")
+
+    def test_admin_still_rejected_for_non_school_day(self):
+        self.session.school_days = '6'  # Saturdays only
+        self.session.save()
+        # A future date that's definitely not a Saturday.
+        candidate = datetime.date.today() + datetime.timedelta(days=1)
+        while candidate.weekday() != 1:  # Tuesday - never a Saturday
+            candidate += datetime.timedelta(days=1)
+        response = self.client.post(reverse('admin_get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': candidate.isoformat(),
+        })
+        self.assertEqual(response.status_code, 400)
+        save_response = self.client.post(reverse('admin_save_attendance'), {
+            'date': candidate.isoformat(), 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(save_response.content, b"False")
+
+    def test_admin_sees_already_taken_by_teacher(self):
+        self.client.logout()
+        self.client.login(username="admin_take_attendance_teacher@example.com", password=PASSWORD)
+        self.client.post(reverse('save_attendance'), {
+            'date': VALID_ATTENDANCE_DATE, 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 0}]),
+        })
+        self.client.logout()
+        self.client.login(username="admin_take_attendance_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('admin_get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        payload = json.loads(response.json())
+        self.assertTrue(payload['already_taken'])
+        self.assertEqual(payload['taken_by'], str(self.teacher))
+
+    def test_deactivated_student_excluded_from_admin_roster(self):
+        self.student.admin.is_active = False
+        self.student.admin.save()
+        response = self.client.post(reverse('admin_get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': VALID_ATTENDANCE_DATE,
+        })
+        ids = [row['id'] for row in json.loads(response.json())['students']]
+        self.assertEqual(ids, [])
+
+    def test_staff_cannot_reach_admin_take_attendance(self):
+        self.client.logout()
+        self.client.login(username="admin_take_attendance_teacher@example.com", password=PASSWORD)
+        response = self.client.get(reverse('admin_take_attendance'))
         self.assertRedirects(response, reverse('staff_home'))
 
 

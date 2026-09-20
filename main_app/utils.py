@@ -193,6 +193,127 @@ def notify_student_leave_decision(leave, status):
         send_push_notification(leave.applied_by_parent.admin, message, 'parent_view_notification')
 
 
+def approved_leave_student_ids(students, attendance_date):
+    """IDs of `students` with an approved leave for `attendance_date`.
+    LeaveReportStudent.date is a free-text field fed by the same HTML5
+    date input as attendance_date, so a plain string match is reliable."""
+    from .models import LeaveReportStudent
+    if not attendance_date:
+        return set()
+    return set(
+        LeaveReportStudent.objects.filter(
+            student__in=students, date=attendance_date, status=1
+        ).values_list('student_id', flat=True)
+    )
+
+
+def resolve_attendance_subject(subject_id, staff=None):
+    """Subject lookup for Take Attendance - scoped to `staff` (a teacher
+    can only take attendance for their own subjects) or unscoped when
+    staff is None (admin can take attendance for any class - e.g.
+    filling in for an absent teacher)."""
+    from django.shortcuts import get_object_or_404
+
+    from .models import Subject
+    if staff is not None:
+        return get_object_or_404(Subject, id=subject_id, staff=staff)
+    return get_object_or_404(Subject, id=subject_id)
+
+
+def build_take_attendance_roster(subject, session, attendance_date):
+    """The Take Attendance roster payload (students + already_taken/
+    taken_by) - shared by the teacher-scoped screen
+    (staff_views.get_students) and the admin any-class version
+    (hod_views.admin_get_students)."""
+    from django.db.models import Q
+
+    from .models import Attendance, AttendanceReport, Student
+    # admin__is_active=True: a deactivated student shouldn't still be
+    # markable in the roster. Matches either the student's primary course
+    # OR a secondary enrollment (e.g. a cross-cutting class like
+    # "Miqaats" nobody has as their primary course) - distinct() guards
+    # against a duplicate row from the secondary_courses join.
+    students = Student.objects.filter(
+        Q(course_id=subject.course_id) | Q(secondary_courses=subject.course_id),
+        session=session, admin__is_active=True,
+    ).distinct()
+    on_leave_ids = approved_leave_student_ids(students, attendance_date)
+    # A class can be co-taught (or, for admin, taken by a teacher and
+    # then re-opened by admin) - if attendance already exists for this
+    # exact subject/session/date, surface that instead of quietly
+    # letting a second save re-mark from a blank slate.
+    existing_attendance = Attendance.objects.filter(
+        subject=subject, session=session, date=attendance_date).first()
+    reports_by_student = {}
+    if existing_attendance:
+        reports_by_student = {
+            r.student_id: r for r in AttendanceReport.objects.filter(attendance=existing_attendance)
+        }
+    student_data = []
+    for student in students:
+        report = reports_by_student.get(student.id)
+        data = {
+                "id": student.id,
+                "name": student.admin.last_name + " " + student.admin.first_name,
+                "on_leave": student.id in on_leave_ids,
+                "status": report.status if report else None,
+                # profile_pic is stored as a plain path string (see
+                # hod_views.add_student), not a normal FileField upload,
+                # so render it the same way every template does:
+                # str(...) - not .url, which would double-prefix it.
+                "profile_pic": str(student.admin.profile_pic),
+                }
+        student_data.append(data)
+    return {
+        "students": student_data,
+        "already_taken": existing_attendance is not None,
+        "taken_by": str(existing_attendance.taken_by) if existing_attendance and existing_attendance.taken_by else None,
+    }
+
+
+def save_take_attendance(subject, session, attendance_date, students, taken_by=None):
+    """Create-or-update the Attendance + per-student AttendanceReport rows
+    - shared by staff_views.save_attendance (taken_by=the teacher) and
+    hod_views.admin_save_attendance (taken_by=None - Attendance.taken_by
+    is a nullable FK to Staff, and every place that reads it already
+    guards on truthiness, so an admin-saved record just has no name to
+    show)."""
+    from django.db.models import Q
+
+    from .models import Attendance, AttendanceReport, Student
+    attendance, created = Attendance.objects.get_or_create(
+        session=session, subject=subject, date=attendance_date)
+    # Whoever most recently saved it - lets a co-teacher (or admin) see
+    # who took it last, not just who happened to create the row first.
+    attendance.taken_by = taken_by
+    attendance.save()
+
+    submitted_ids = [student_dict.get('id') for student_dict in students]
+    on_leave_ids = approved_leave_student_ids(
+        Student.objects.filter(id__in=submitted_ids), attendance_date)
+
+    for student_dict in students:
+        # Scoped to the subject's own class (primary OR secondary
+        # enrollment - see build_take_attendance_roster) - otherwise a
+        # submitted student id from an unrelated class would get an
+        # attendance record fabricated against this subject/session/date.
+        from django.shortcuts import get_object_or_404
+        student = get_object_or_404(
+            Student.objects.filter(Q(course_id=subject.course_id) | Q(secondary_courses=subject.course_id)),
+            id=student_dict.get('id'))
+        if student.id in on_leave_ids:
+            # Approved leave for this date - don't record attendance for
+            # them at all, even if the client tried to send one.
+            continue
+
+        # get_or_create so re-taking attendance for the same student/date
+        # (e.g. correcting a mistake) updates the existing report instead
+        # of creating a duplicate.
+        attendance_report, _ = AttendanceReport.objects.get_or_create(student=student, attendance=attendance)
+        attendance_report.status = student_dict.get('status')
+        attendance_report.save()
+
+
 def teacher_course_ids(staff):
     """IDs of every course `staff` teaches at least one subject in.
 
@@ -380,17 +501,79 @@ def take_attendance_date_error(session, date_obj):
     return None
 
 
+def apply_default_secondary_enrollment(user):
+    """If this install has a default secondary class configured (see
+    SiteSettings.default_secondary_course), enroll a freshly-created
+    Student in it, or add a freshly-created Staff to teach all of its
+    Subjects. Called right after a new Student/Staff role is created -
+    both a brand-new account and an existing account just granted the
+    role, since either way a new Student/Staff row is being created for
+    the first time. A no-op when nothing's configured, so every existing
+    install behaves exactly as before until an admin opts in."""
+    from .models import SiteSettings, Subject
+    course = SiteSettings.load().default_secondary_course
+    if course is None:
+        return
+    if hasattr(user, 'student'):
+        user.student.secondary_courses.add(course)
+    elif hasattr(user, 'staff'):
+        for subject in Subject.objects.filter(course=course):
+            subject.staff.add(user.staff)
+
+
+def attendance_not_taken_rows(selected_date, course_id='', staff=None):
+    """Subjects with no Attendance row on `selected_date` - the shared
+    computation behind both the admin-wide (hod_views.report_attendance_not_taken)
+    and teacher-scoped (staff_views.staff_report_attendance_not_taken)
+    "Attendance Not Taken" reports. `staff` optionally narrows this to
+    just the subjects that teacher is assigned to - co-teaching aware,
+    since it's the same Subject.staff M2M filter used everywhere else
+    (see teacher_course_ids)."""
+    from .models import Attendance, Subject
+    subjects = (Subject.objects.select_related('course')
+                .prefetch_related('staff__admin').order_by('course__name', 'name'))
+    if staff is not None:
+        subjects = subjects.filter(staff=staff)
+    if course_id:
+        subjects = subjects.filter(course_id=course_id)
+
+    # Not scoped by Session - a subject with attendance taken in any
+    # session on this date already has *something* recorded for it, and
+    # session is a batch/cohort concept the person checking "did this
+    # class get marked today" doesn't need to think about up front.
+    taken_subject_ids = set(
+        Attendance.objects.filter(date=selected_date, subject__in=subjects)
+        .values_list('subject_id', flat=True)
+    )
+    return [
+        {'course': subject.course.name, 'subject': subject.name,
+         'teacher': ', '.join(str(t) for t in subject.staff.all())}
+        for subject in subjects if subject.id not in taken_subject_ids
+    ]
+
+
 def session_course_ids_map():
     """Map of Session.id -> set of Course ids with at least one Student
-    enrolled in that session. A class isn't tied to one session (it
+    enrolled in that session (primary OR secondary - see
+    Student.secondary_courses). A class isn't tied to one session (it
     spans years), but this lets a "Class" filter narrow the Session
     dropdown down to years that actually had students in that class,
-    instead of listing every session the school has ever had."""
+    instead of listing every session the school has ever had.
+
+    A purely-secondary class (e.g. a cross-cutting one like "Miqaats",
+    which no student has as their *primary* course) still needs to show
+    up here once at least one enrolled student's session is known -
+    otherwise picking it as the Class anywhere in the app would show an
+    empty Session dropdown and the whole flow would dead-end."""
     from .models import Student
     by_session = {}
     pairs = Student.objects.exclude(session=None).exclude(course=None).values_list('session_id', 'course_id')
     for session_id, course_id in pairs:
         by_session.setdefault(session_id, set()).add(course_id)
+    secondary_pairs = Student.objects.exclude(session=None).values_list('session_id', 'secondary_courses__id')
+    for session_id, course_id in secondary_pairs:
+        if course_id is not None:
+            by_session.setdefault(session_id, set()).add(course_id)
     return by_session
 
 

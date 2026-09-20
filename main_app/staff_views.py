@@ -1,10 +1,10 @@
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from django.contrib import messages
 from django.core.files.storage import FileSystemStorage
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -14,7 +14,10 @@ from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      FeedbackStaff, LeaveReportStaff, LeaveReportStudent,
                      NotificationStaff, Session, Staff,
                      Student, StudentResult, Subject)
-from .utils import (notify_student_leave_decision, paginate,
+from .utils import (all_configured_school_weekdays, approved_leave_student_ids,
+                    attendance_not_taken_rows, build_take_attendance_roster,
+                    notify_student_leave_decision, paginate,
+                    resolve_attendance_subject, save_take_attendance,
                     send_notification_email, session_course_ids_map,
                     take_attendance_date_error, teacher_course_ids)
 
@@ -79,19 +82,6 @@ def staff_view_attendance(request):
     return render(request, 'staff_template/staff_view_attendance.html', context)
 
 
-def _approved_leave_student_ids(students, attendance_date):
-    """IDs of `students` with an approved leave for `attendance_date`.
-    LeaveReportStudent.date is a free-text field fed by the same HTML5
-    date input as attendance_date, so a plain string match is reliable."""
-    if not attendance_date:
-        return set()
-    return set(
-        LeaveReportStudent.objects.filter(
-            student__in=students, date=attendance_date, status=1
-        ).values_list('student_id', flat=True)
-    )
-
-
 def get_students(request):
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
@@ -102,7 +92,7 @@ def get_students(request):
         # subject_id and pull up a class they don't teach. Still works
         # unchanged now that staff is many-to-many - Django treats
         # staff=<instance> as an "is one of this subject's teachers" test.
-        subject = get_object_or_404(Subject, id=subject_id, staff=staff)
+        subject = resolve_attendance_subject(subject_id, staff=staff)
         session = get_object_or_404(Session, id=session_id)
 
         date_obj = datetime.strptime(attendance_date, "%Y-%m-%d").date()
@@ -110,40 +100,7 @@ def get_students(request):
         if date_error:
             return JsonResponse({'error': date_error}, status=400)
 
-        students = Student.objects.filter(
-            course_id=subject.course.id, session=session)
-        on_leave_ids = _approved_leave_student_ids(students, attendance_date)
-        # A class can be co-taught - if another teacher already took
-        # attendance for this exact subject/session/date, surface that
-        # instead of quietly letting a second teacher re-mark from a
-        # blank slate (see staff_take_attendance.html's warning banner).
-        existing_attendance = Attendance.objects.filter(
-            subject=subject, session=session, date=attendance_date).first()
-        reports_by_student = {}
-        if existing_attendance:
-            reports_by_student = {
-                r.student_id: r for r in AttendanceReport.objects.filter(attendance=existing_attendance)
-            }
-        student_data = []
-        for student in students:
-            report = reports_by_student.get(student.id)
-            data = {
-                    "id": student.id,
-                    "name": student.admin.last_name + " " + student.admin.first_name,
-                    "on_leave": student.id in on_leave_ids,
-                    "status": report.status if report else None,
-                    # profile_pic is stored as a plain path string (see
-                    # hod_views.add_student), not a normal FileField upload,
-                    # so render it the same way every template does:
-                    # str(...) - not .url, which would double-prefix it.
-                    "profile_pic": str(student.admin.profile_pic),
-                    }
-            student_data.append(data)
-        payload = {
-            "students": student_data,
-            "already_taken": existing_attendance is not None,
-            "taken_by": str(existing_attendance.taken_by) if existing_attendance and existing_attendance.taken_by else None,
-        }
+        payload = build_take_attendance_roster(subject, session, attendance_date)
         return JsonResponse(json.dumps(payload), content_type='application/json', safe=False)
     except Exception:
         logger.exception("Failed to fetch students")
@@ -161,40 +118,13 @@ def save_attendance(request):
         session = get_object_or_404(Session, id=session_id)
         # Scoped to `staff` so a teacher can't record/overwrite attendance
         # for a class they don't teach by submitting another subject_id.
-        subject = get_object_or_404(Subject, id=subject_id, staff=staff)
+        subject = resolve_attendance_subject(subject_id, staff=staff)
 
         date_obj = datetime.strptime(date, "%Y-%m-%d").date()
         if take_attendance_date_error(session, date_obj):
             return HttpResponse("False")
 
-        # Check if an attendance object already exists for the given date and session
-        attendance, created = Attendance.objects.get_or_create(session=session, subject=subject, date=date)
-        # Whoever most recently saved it - lets a co-teacher see who took
-        # it last, not just who happened to create the row first.
-        attendance.taken_by = staff
-        attendance.save()
-
-        submitted_ids = [student_dict.get('id') for student_dict in students]
-        on_leave_ids = _approved_leave_student_ids(
-            Student.objects.filter(id__in=submitted_ids), date)
-
-        for student_dict in students:
-            # Scoped to the subject's own class - otherwise a submitted
-            # student id from a different class would get an attendance
-            # record fabricated against this subject/session/date.
-            student = get_object_or_404(Student, id=student_dict.get('id'), course_id=subject.course_id)
-            if student.id in on_leave_ids:
-                # Approved leave for this date - don't record attendance
-                # for them at all, even if the client tried to send one.
-                continue
-
-            # get_or_create so re-taking attendance for the same
-            # student/date (e.g. correcting a mistake) updates the
-            # existing report instead of creating a duplicate.
-            attendance_report, _ = AttendanceReport.objects.get_or_create(student=student, attendance=attendance)
-            attendance_report.status = student_dict.get('status')
-            attendance_report.save()
-
+        save_take_attendance(subject, session, date, students, taken_by=staff)
     except Exception as e:
         logger.exception("Failed to save attendance")
         return HttpResponse("False")
@@ -221,11 +151,13 @@ def get_student_attendance(request):
         # (see save_attendance), but should still show up here, disabled,
         # rather than silently disappearing from the list.
         students = Student.objects.filter(
-            course_id=attendance.subject.course_id, session=attendance.session)
+            Q(course_id=attendance.subject.course_id) | Q(secondary_courses=attendance.subject.course_id),
+            session=attendance.session, admin__is_active=True,
+        ).distinct()
         reports_by_student = {
             r.student_id: r for r in AttendanceReport.objects.filter(attendance=attendance)
         }
-        on_leave_ids = _approved_leave_student_ids(students, attendance.date.isoformat())
+        on_leave_ids = approved_leave_student_ids(students, attendance.date.isoformat())
         student_data = []
         for student in students:
             report = reports_by_student.get(student.id)
@@ -260,7 +192,7 @@ def update_attendance(request):
             s.admin_id: s for s in Student.objects.filter(
                 admin_id__in=admin_ids, course_id=attendance.subject.course_id)
         }
-        on_leave_ids = _approved_leave_student_ids(
+        on_leave_ids = approved_leave_student_ids(
             students_by_admin_id.values(), attendance.date.isoformat())
 
         for student_dict in students:
@@ -282,6 +214,27 @@ def update_attendance(request):
         return HttpResponse("False")
 
     return HttpResponse("OK")
+
+
+def staff_report_attendance_not_taken(request):
+    """Teacher-scoped version of the admin's Attendance Not Taken report -
+    only this teacher's own subjects (co-teaching aware, via Subject.staff),
+    so they can quickly see what they've missed instead of scrolling
+    through the whole school's list."""
+    staff = get_object_or_404(Staff, admin=request.user)
+    selected_date = request.GET.get('date') or date.today().isoformat()
+    course_id = request.GET.get('course') or ''
+    not_taken = attendance_not_taken_rows(selected_date, course_id, staff=staff)
+    school_weekdays = all_configured_school_weekdays()
+    context = {
+        'page_title': 'Attendance Not Taken',
+        'courses': Course.objects.filter(id__in=teacher_course_ids(staff)).order_by('name'),
+        'school_weekdays_json': json.dumps(school_weekdays),
+        'selected_date': selected_date,
+        'selected_course': course_id,
+        'not_taken': not_taken,
+    }
+    return render(request, 'staff_template/staff_report_attendance_not_taken.html', context)
 
 
 def staff_apply_leave(request):

@@ -108,6 +108,13 @@ class Student(models.Model):
     # student is approved (see ParentStudentLink) - not collected anywhere
     # else, so it stays null until then.
     date_of_birth = models.DateField(null=True, blank=True)
+    # An ADDITIONAL class on top of `course` (the primary/real class) -
+    # e.g. every student also belongs to a cross-cutting class like
+    # "Miqaats". Deliberately kept separate from `course` rather than
+    # converting it to M2M - `course` is referenced as a single value in
+    # ~30 places (views, forms, templates); this is purely additive and
+    # touches none of them.
+    secondary_courses = models.ManyToManyField(Course, blank=True, related_name='secondary_students')
 
     def __str__(self):
         return self.admin.last_name + ", " + self.admin.first_name
@@ -308,6 +315,11 @@ class SiteSettings(models.Model):
     email_host_password = models.CharField(max_length=255, blank=True)
     email_use_tls = models.BooleanField(default=True)
     onboarding_completed = models.BooleanField(default=False)
+    # The one course every NEW student/teacher automatically joins going
+    # forward (see utils.apply_default_secondary_enrollment). Null = no
+    # default configured - the historical/current behavior.
+    default_secondary_course = models.ForeignKey(
+        'Course', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):

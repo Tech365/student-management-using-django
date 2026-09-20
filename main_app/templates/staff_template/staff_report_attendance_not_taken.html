@@ -1,0 +1,80 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" class="form-inline">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Date</label>
+                                <input type="text" name="date" id="date_picker" class="form-control"
+                                       value="{{ selected_date }}" autocomplete="off">
+                            </div>
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Class</label>
+                                <select name="course" class="form-control">
+                                    <option value="">All My Classes</option>
+                                    {% for course in courses %}
+                                    <option value="{{ course.id }}" {% if selected_course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary mr-2">Filter</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Your subjects with no attendance recorded on {{ selected_date }}</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead>
+                                    <tr><th>Class</th><th>Subject</th><th>Teacher</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in not_taken %}
+                                    <tr>
+                                        <td>{{ row.course }}</td>
+                                        <td>{{ row.subject }}</td>
+                                        <td>{{ row.teacher }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="3" class="text-muted">You've taken attendance for every subject on {{ selected_date }}{% if selected_course %} in this class{% endif %}.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
+{% block custom_js %}
+<script>
+    $(document).ready(function () {
+        // Greys out a date only if EVERY session with school_days
+        // configured agrees it's not one - matches the admin report's
+        // same lenient default (no restriction if nothing's configured).
+        var schoolWeekdays = {{ school_weekdays_json|safe }}
+        flatpickr("#date_picker", {
+            dateFormat: "Y-m-d",
+            disable: schoolWeekdays ? [function (date) {
+                return schoolWeekdays.indexOf(date.getDay()) === -1
+            }] : [],
+        })
+    })
+</script>
+{% endblock custom_js %}

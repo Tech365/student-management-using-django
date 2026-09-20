@@ -1,0 +1,104 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+
+{% block content %}
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">
+                            Enroll students in an ADDITIONAL class on top of their real one - e.g. a
+                            cross-cutting class like "Miqaats" that everyone also belongs to. This
+                            doesn't change anyone's primary class.
+                        </p>
+                        <form method="GET" class="form-inline">
+                            <div class="form-group mr-2">
+                                <label class="mr-2">Class</label>
+                                <select name="course" class="form-control" onchange="this.form.submit()">
+                                    <option value="">-- Select a class --</option>
+                                    {% for course in courses %}
+                                    <option value="{{ course.id }}" {% if selected_course.id == course.id %}selected{% endif %}>{{ course.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                {% if selected_course %}
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Students enrolled in {{ selected_course.name }} (secondary)</h3>
+                    </div>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="course" value="{{ selected_course.id }}">
+                        <div class="card-body">
+                            <div class="form-group">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input" id="select_all">
+                                    <label class="custom-control-label" for="select_all">Select all</label>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input" id="set_default" name="set_default"
+                                           {% if is_default %}checked{% endif %}>
+                                    <label class="custom-control-label" for="set_default">
+                                        Make this the default - every new student is auto-enrolled and every new
+                                        teacher is auto-assigned to teach it going forward
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                                <table class="table table-bordered table-hover">
+                                    <thead>
+                                        <tr><th></th><th>Student</th><th>Primary Class</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for student in students %}
+                                        <tr>
+                                            <td>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input student-checkbox"
+                                                           id="student{{ student.id }}" name="student_ids" value="{{ student.id }}"
+                                                           {% if student.id in enrolled_ids %}checked{% endif %}>
+                                                    <label class="custom-control-label" for="student{{ student.id }}"></label>
+                                                </div>
+                                            </td>
+                                            <td>{{ student.admin.last_name }}, {{ student.admin.first_name }}</td>
+                                            <td>{{ student.course.name|default:"—" }}</td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr><td colspan="3" class="text-muted">No students yet.</td></tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <button type="submit" class="btn btn-primary">Save Enrollment</button>
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
+{% block custom_js %}
+<script>
+    $(document).ready(function () {
+        $("#select_all").on("change", function () {
+            $(".student-checkbox").prop("checked", $(this).is(":checked"))
+        })
+    })
+</script>
+{% endblock custom_js %}

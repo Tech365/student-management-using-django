@@ -1,0 +1,286 @@
+{% extends 'main_app/base.html' %}
+{% load static %}
+{% block page_title %}{{page_title}}{% endblock page_title %}
+{% block custom_css %}
+<style>
+    .roster-avatar {
+        width: 32px;
+        height: 32px;
+        object-fit: cover;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+    }
+    .roster-item .custom-control-label {
+        display: flex;
+        align-items: center;
+    }
+</style>
+{% endblock custom_css %}
+{% block content %}
+
+<section class="content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <!-- general form elements -->
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">{{page_title}}</h3>
+                    </div>
+
+                    <!-- /.card-header -->
+                    <!-- form start -->
+                    <div class="card-body">
+
+                        <p class="text-muted">
+                            For covering a class whose teacher is absent - unlike the teacher's own
+                            Take Attendance screen, this isn't limited to the most recent school day,
+                            so you can catch up on any date the class was missed.
+                        </p>
+
+                        <div class="form-group">
+                            <label>Class</label>
+                            <select name="course" class="form-control" id='course'>
+                                <option value="">----</option>
+                                {% for course in courses %}
+                                <option value="{{course.id}}">{{course.name}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Subject</label>
+                            <select name="subject" class="form-control" id='subject' disabled>
+                                <option value="">Select a class first</option>
+                            </select>
+                            <select id='all-subjects' style="display:none;">
+                                {% for subject in subjects %}
+                                <option value="{{subject.id}}" data-course="{{subject.course_id}}">{{subject.name}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+
+                        <div class="form-group">
+                            <label>Session Year</label>
+                            <select name="session" id='session' class="form-control" disabled>
+                                <option value="">Select a class first</option>
+                            </select>
+                            <select id='all-sessions' style="display:none;">
+                                {% for session in sessions %}
+                                <option value="{{session.id}}" data-courses="{{session.course_ids_str}}" data-schooldays="{{session.school_days}}">{{session}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Attendance Date</label>
+                            <input type="text" class='form-control' name="attendance_date" id='attendance_date'
+                                   placeholder="Select a date" autocomplete="off">
+                        </div>
+
+                    </div>
+                    <!-- /.card-body -->
+
+                    <div class="card-footer">
+                        <button type="button" id='fetch_student' class="btn btn-primary btn-block">Fetch
+                            Students</button>
+                        <div class="form-group" id="student_data">
+
+                        </div>
+                    </div>
+                </div>
+                <!-- /.card -->
+
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
+
+
+{% block custom_js %}
+<script>
+    $(document).ready(function () {
+
+        $("#course").change(function () {
+            var course = $(this).val()
+            var subjectSelect = $("#subject")
+            var sessionSelect = $("#session")
+            if (course.length == 0) {
+                subjectSelect.html('<option value="">Select a class first</option>')
+                subjectSelect.prop("disabled", true)
+                sessionSelect.html('<option value="">Select a class first</option>')
+                sessionSelect.prop("disabled", true)
+                return
+            }
+            subjectSelect.html('<option value="">----</option>')
+            $("#all-subjects option[data-course='" + course + "']").each(function () {
+                subjectSelect.append($("<option>").val($(this).val()).text($(this).text()))
+            })
+            subjectSelect.prop("disabled", false)
+
+            sessionSelect.html('<option value="">----</option>')
+            $("#all-sessions option").each(function () {
+                var courseIds = ($(this).data("courses") + "").split(" ")
+                if (courseIds.indexOf(course) !== -1) {
+                    sessionSelect.append($("<option>").val($(this).val()).text($(this).text()))
+                }
+            })
+            sessionSelect.prop("disabled", false)
+            // The session dropdown was just rebuilt (and reset to
+            // unselected) - drop any stale per-session weekday restriction
+            // from before the class was switched.
+            updateDatePickerRestriction()
+        })
+
+        // Non-school-days are greyed out and unclickable, not just warned
+        // about - the picker's own "disable" rule is rebuilt every time
+        // the session changes, from that session's data-schooldays.
+        // Unlike the teacher-facing Take Attendance screen, there is
+        // deliberately no minDate floor here - this screen exists
+        // specifically to catch up on a class whose teacher was absent,
+        // which can be several days in the past.
+        var datePicker = flatpickr("#attendance_date", {
+            dateFormat: "Y-m-d",
+            disable: [],
+        })
+
+        function updateDatePickerRestriction() {
+            var sessionId = $("#session").val()
+            var schoolDays = sessionId
+                ? ($("#all-sessions option[value='" + sessionId + "']").data("schooldays") + "").trim()
+                : ""
+            var allowed = schoolDays ? schoolDays.split(",").map(Number) : null
+            datePicker.set('disable', allowed ? [function (date) {
+                return allowed.indexOf(date.getDay()) === -1
+            }] : [])
+            // A date picked before narrowing the session down shouldn't
+            // silently stay selected if it's no longer a valid weekday.
+            if (datePicker.selectedDates.length && allowed) {
+                var selected = datePicker.selectedDates[0]
+                if (allowed.indexOf(selected.getDay()) === -1) {
+                    datePicker.clear()
+                }
+            }
+        }
+        $("#session").on("change", updateDatePickerRestriction)
+
+        function renderRoster(payload) {
+            var json_data = payload.students
+            var warning = ""
+            if (payload.already_taken) {
+                var by = payload.taken_by ? " by " + escapeHtml(payload.taken_by) : ""
+                warning = "<div class='alert alert-warning mt-3'>Attendance for this class/date was already taken" + by + ". The boxes below reflect what's currently recorded - saving will update it.</div>"
+            }
+            if (json_data.length < 1) {
+                $("#student_data").html(warning + '<div class="alert alert-warning mt-3">No students found for this class/session.</div>')
+                return
+            }
+            var div_data = warning + "<hr/><div class='mb-2'>" +
+                "<button type='button' id='mark_all_present' class='btn btn-outline-success btn-sm'>Mark All Present</button> " +
+                "<button type='button' id='mark_all_absent' class='btn btn-outline-danger btn-sm'>Mark All Absent</button>" +
+                "</div><div class='row'>"
+
+            for (key in json_data) {
+                var on_leave = json_data[key]['on_leave']
+                // status: 1/0 from an existing record, or null if never
+                // marked - default to present only in the null case, so
+                // re-opening an already-taken class shows what's actually
+                // recorded instead of quietly resetting everyone.
+                var status = json_data[key]['status']
+                var present = on_leave ? false : (status === null ? true : !!status)
+                var checked_attr = present ? "checked='checked'" : ""
+                var disabled_attr = on_leave ? "disabled='disabled'" : ""
+                var leave_badge = on_leave ? " <span class='badge badge-warning'>On Leave</span>" : ""
+                var avatar = json_data[key]['profile_pic']
+                    ? "<img class='roster-avatar' src='" + escapeHtml(json_data[key]['profile_pic']) + "' alt=''>"
+                    : "<i data-lucide='user-circle' class='roster-avatar' style='width:32px;height:32px;color:#ccc;'></i>"
+                div_data += "<div class='col-lg-3 roster-item'><div class='form-check custom-control custom-checkbox'><input type='checkbox' class='custom-control-input' " + checked_attr + " " + disabled_attr + " name='student_data[]' value=" + json_data[key]['id'] + " id='checkbox" + json_data[key]['id'] + "' /> <label for='checkbox" + json_data[key]['id'] + "' class='custom-control-label'>" + avatar + escapeHtml(json_data[key]['name']) + leave_badge + "</label></div> </div>"
+            }
+            div_data += "</div>"
+            div_data += "<div class='form-group mt-2'><button id='save_attendance' class='btn btn-success' type='button'>Save Attendance</button></div>"
+            $("#student_data").html(div_data)
+            // Roster avatars for students with no photo are rendered as
+            // data-lucide markup above - this dynamically-inserted content
+            // needs its own createIcons() pass (the one at page load only
+            // sees icons present in the initial HTML).
+            lucide.createIcons({ attrs: { 'stroke-width': 1.75 } })
+        }
+
+        function fetchStudents() {
+            var subject = $("#subject").val()
+            var session = $("#session").val()
+            var attendance_date = $("#attendance_date").val()
+            if ($("#course").val().length == 0 || subject.length == 0 || session.length == 0 || attendance_date.length == 0) {
+                notifyUser("Please select class, subject, session and date", "warning")
+                return
+            }
+            $.ajax({
+                url: "{% url 'admin_get_students' %}",
+                type: 'POST',
+                data: { subject: subject, session: session, date: attendance_date }
+            }).done(function (response) {
+                renderRoster(JSON.parse(response))
+            }).fail(function (response) {
+                var msg = (response.responseJSON && response.responseJSON.error) || "Error fetching students"
+                notifyUser(msg, "error")
+            })
+        }
+
+        $("#fetch_student").click(function () {
+            fetchStudents()
+        })
+
+        // Delegated, bound once - not re-bound on every fetch, so
+        // re-fetching (e.g. after changing the date) can never cause a
+        // duplicate save when Save Attendance is clicked afterwards.
+        $(document).on('click', '#mark_all_present', function () {
+            $("input[name='student_data[]']:not(:disabled)").prop('checked', true)
+        })
+        $(document).on('click', '#mark_all_absent', function () {
+            $("input[name='student_data[]']:not(:disabled)").prop('checked', false)
+        })
+        $(document).on('click', '#save_attendance', function () {
+            var $btn = $(this)
+            $btn.attr("disabled", "disabled").text("Saving Attendance Data...")
+            var student_data = $("input[name='student_data[]']:not(:disabled)").map(function () {
+                return { 'id': $(this).val(), 'status': $(this).is(":checked") ? 1 : 0 }
+            }).get()
+            var subject = $("#subject").val()
+            var session = $("#session").val()
+            var attendance_date = $('#attendance_date').val()
+            if (attendance_date.length < 10) {
+                notifyUser("Select a date", "warning")
+                $btn.removeAttr("disabled").text("Save Attendance")
+                return
+            }
+            $.ajax({
+                url: "{% url 'admin_save_attendance' %}",
+                type: 'POST',
+                data: {
+                    date: attendance_date,
+                    student_ids: JSON.stringify(student_data),
+                    subject: subject,
+                    session: session
+                }
+            }).done(function (response) {
+                if (response == 'OK') {
+                    notifyUser("Attendance saved", "success")
+                    // Re-fetch in place instead of reloading the page, so
+                    // the class/subject/session/date you just used stays
+                    // selected - handy for taking attendance for the next
+                    // subject right after this one.
+                    fetchStudents()
+                } else {
+                    notifyUser("Error saving attendance. Please try again", "error")
+                    $btn.removeAttr("disabled").text("Save Attendance")
+                }
+            }).fail(function (response) {
+                notifyUser("Error saving attendance", "error")
+                $btn.removeAttr("disabled").text("Save Attendance")
+            })
+        })
+    })
+</script>
+{% endblock custom_js %}

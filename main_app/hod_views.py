@@ -22,12 +22,16 @@ from .models import (Admin, AttendanceReport, Attendance, AuditLog, Course,
                      CustomUser, FeedbackStaff, FeedbackStudent,
                      LeaveReportStaff, LeaveReportStudent, NotificationParent,
                      NotificationStaff, NotificationStudent, Parent,
-                     ParentStudentLink, Session, Staff, Student,
+                     ParentStudentLink, Session, SiteSettings, Staff, Student,
                      StudentResult, Subject)
-from .utils import (all_configured_school_weekdays, csv_response, grant_role,
+from .utils import (all_configured_school_weekdays,
+                    apply_default_secondary_enrollment,
+                    attendance_not_taken_rows, build_take_attendance_roster,
+                    csv_response, grant_role, is_school_day,
                     leave_decision_message, log_action, missing_roles,
                     notify_student_leave_decision, paginate,
                     parent_link_decision_message, read_csv_rows,
+                    resolve_attendance_subject, save_take_attendance,
                     send_notification_email, send_push_notification,
                     session_course_ids_map, staff_class_names_map, user_roles)
 
@@ -208,6 +212,7 @@ def add_staff(request):
                     messages.error(request, f"{existing_user} is already a Staff member.")
                 else:
                     grant_role(existing_user, '2')
+                    apply_default_secondary_enrollment(existing_user)
                     log_action(request, 'granted', 'Staff', existing_user)
                     messages.success(request, f"Staff role added to {existing_user}'s existing account.")
                     return redirect(reverse('add_staff'))
@@ -228,6 +233,7 @@ def add_staff(request):
                     user.gender = gender
                     user.address = address
                     user.save()
+                    apply_default_secondary_enrollment(user)
                     log_action(request, 'created', 'Staff', user)
                     messages.success(request, "Successfully Added")
                     return redirect(reverse('add_staff'))
@@ -258,6 +264,7 @@ def add_student(request):
                     messages.error(request, f"{existing_user} is already a Student.")
                 else:
                     grant_role(existing_user, '3', course=course, session=session)
+                    apply_default_secondary_enrollment(existing_user)
                     log_action(request, 'granted', 'Student', existing_user)
                     messages.success(request, f"Student role added to {existing_user}'s existing account.")
                     return redirect(reverse('add_student'))
@@ -280,6 +287,7 @@ def add_student(request):
                     user.student.session = session
                     user.student.course = course
                     user.save()
+                    apply_default_secondary_enrollment(user)
                     log_action(request, 'created', 'Student', user)
                     messages.success(request, "Successfully Added")
                     return redirect(reverse('add_student'))
@@ -496,6 +504,7 @@ def bulk_upload_staff(request):
                     user.gender = gender
                     user.address = address
                     user.save()
+                    apply_default_secondary_enrollment(user)
                     results.append({'row': row_number, 'status': 'success',
                                      'message': f'Created — temporary password: {password}'})
                 except Exception as e:
@@ -565,6 +574,7 @@ def bulk_upload_students(request):
                     user.student.course = course
                     user.student.session = session
                     user.student.save()
+                    apply_default_secondary_enrollment(user)
                     results.append({'row': row_number, 'status': 'success',
                                      'message': f'Created — temporary password: {password}'})
                 except Exception as e:
@@ -653,6 +663,47 @@ def manage_course(request):
         'page_title': 'Manage Classes'
     }
     return render(request, "hod_template/manage_course.html", context)
+
+
+def manage_secondary_enrollment(request):
+    """Bulk-manage which students belong to a SECONDARY class (e.g. a
+    cross-cutting one like "Miqaats") on top of their real/primary class.
+    Also lets the admin mark one course as the default every new student
+    auto-joins, and every new teacher auto-teaches (see
+    utils.apply_default_secondary_enrollment)."""
+    site_settings = SiteSettings.load()
+    if request.method == 'POST':
+        course = get_object_or_404(Course, id=request.POST.get('course'))
+        selected_ids = set(request.POST.getlist('student_ids'))
+        for student in Student.objects.all():
+            if str(student.id) in selected_ids:
+                student.secondary_courses.add(course)
+            else:
+                student.secondary_courses.remove(course)
+        if request.POST.get('set_default') == 'on':
+            site_settings.default_secondary_course = course
+            site_settings.save()
+        elif site_settings.default_secondary_course_id == course.id:
+            site_settings.default_secondary_course = None
+            site_settings.save()
+        log_action(request, 'updated', 'Class Enrollment', course)
+        messages.success(request, f"Updated enrollment for {course.name}.")
+        return redirect(reverse('manage_secondary_enrollment') + f'?course={course.id}')
+
+    course_id = request.GET.get('course') or (
+        str(site_settings.default_secondary_course_id) if site_settings.default_secondary_course_id else '')
+    selected_course = Course.objects.filter(id=course_id).first() if course_id else None
+    students = Student.objects.select_related('admin', 'course').order_by('admin__last_name', 'admin__first_name')
+    enrolled_ids = set(selected_course.secondary_students.values_list('id', flat=True)) if selected_course else set()
+    context = {
+        'courses': Course.objects.order_by('name'),
+        'selected_course': selected_course,
+        'students': students,
+        'enrolled_ids': enrolled_ids,
+        'is_default': bool(selected_course and site_settings.default_secondary_course_id == selected_course.id),
+        'page_title': 'Class Enrollment',
+    }
+    return render(request, 'hod_template/manage_secondary_enrollment.html', context)
 
 
 def manage_subject(request):
@@ -1159,6 +1210,67 @@ def view_parent_link_requests(request):
             return HttpResponse(False)
 
 
+def admin_take_attendance(request):
+    """Lets an admin take attendance for ANY class/subject, not just ones
+    a specific teacher is assigned to - for covering a class when its
+    teacher is absent and nobody else has taken attendance for it."""
+    subjects = Subject.objects.select_related('course').order_by('course__name', 'name')
+    courses = Course.objects.order_by('name')
+    sessions = Session.objects.all()
+    session_courses = session_course_ids_map()
+    for session in sessions:
+        session.course_ids_str = ' '.join(str(c) for c in session_courses.get(session.id, []))
+    context = {
+        'subjects': subjects, 'courses': courses, 'sessions': sessions,
+        'page_title': 'Take Attendance',
+    }
+    return render(request, 'hod_template/admin_take_attendance.html', context)
+
+
+def admin_get_students(request):
+    subject_id = request.POST.get('subject')
+    session_id = request.POST.get('session')
+    attendance_date = request.POST.get('date')
+    try:
+        subject = resolve_attendance_subject(subject_id)  # staff=None - any class
+        session = get_object_or_404(Session, id=session_id)
+        date_obj = datetime.strptime(attendance_date, "%Y-%m-%d").date()
+        if not is_school_day(session, date_obj):
+            return JsonResponse({'error': "That date isn't a school day for the selected session."}, status=400)
+        # Deliberately no take_attendance_date_error/latest_school_day
+        # floor here, unlike the teacher-facing get_students - the whole
+        # point of this admin screen is catching up on a class that's
+        # already slipped past that floor because its teacher was absent.
+        payload = build_take_attendance_roster(subject, session, attendance_date)
+        return JsonResponse(json.dumps(payload), content_type='application/json', safe=False)
+    except Exception:
+        logger.exception("Failed to fetch students")
+        return JsonResponse({'error': 'Could not fetch students.'}, status=400)
+
+
+def admin_save_attendance(request):
+    student_data = request.POST.get('student_ids')
+    date = request.POST.get('date')
+    subject_id = request.POST.get('subject')
+    session_id = request.POST.get('session')
+    students = json.loads(student_data)
+    try:
+        subject = resolve_attendance_subject(subject_id)
+        session = get_object_or_404(Session, id=session_id)
+        date_obj = datetime.strptime(date, "%Y-%m-%d").date()
+        if not is_school_day(session, date_obj):
+            return HttpResponse("False")
+        # taken_by=None - admin has no Staff row to attribute this to;
+        # every place Attendance.taken_by is read already guards on
+        # truthiness (see build_take_attendance_roster), so this just
+        # shows no name rather than breaking anything.
+        save_take_attendance(subject, session, date, students, taken_by=None)
+    except Exception:
+        logger.exception("Failed to save attendance")
+        return HttpResponse("False")
+    return HttpResponse("OK")
+
+
 def admin_view_attendance(request):
     courses = Course.objects.order_by('name')
     subjects = Subject.objects.select_related('course').order_by('course__name', 'name')
@@ -1188,7 +1300,10 @@ def get_admin_attendance(request):
         # The full class roster, not just students with an existing
         # AttendanceReport - a student on approved leave never gets one,
         # but should still be visible here rather than disappearing.
-        students = Student.objects.filter(course_id=subject.course_id, session=session)
+        students = Student.objects.filter(
+            Q(course_id=subject.course_id) | Q(secondary_courses=subject.course_id),
+            session=session, admin__is_active=True,
+        ).distinct()
         reports_by_student = {
             r.student_id: r for r in AttendanceReport.objects.filter(attendance=attendance)
         }
@@ -1714,25 +1829,7 @@ def _attendance_summary_data(request):
 def _attendance_not_taken_data(request):
     selected_date = request.GET.get('date') or date.today().isoformat()
     course_id = request.GET.get('course') or ''
-
-    subjects = (Subject.objects.select_related('course')
-                .prefetch_related('staff__admin').order_by('course__name', 'name'))
-    if course_id:
-        subjects = subjects.filter(course_id=course_id)
-
-    # Not scoped by Session - a subject with attendance taken in any
-    # session on this date already has *something* recorded for it, and
-    # session is a batch/cohort concept the person checking "did this
-    # class get marked today" doesn't need to think about up front.
-    taken_subject_ids = set(
-        Attendance.objects.filter(date=selected_date, subject__in=subjects)
-        .values_list('subject_id', flat=True)
-    )
-    not_taken = [
-        {'course': subject.course.name, 'subject': subject.name,
-         'teacher': ', '.join(str(t) for t in subject.staff.all())}
-        for subject in subjects if subject.id not in taken_subject_ids
-    ]
+    not_taken = attendance_not_taken_rows(selected_date, course_id)
     return {'selected_date': selected_date, 'selected_course': course_id, 'not_taken': not_taken}
 
 
