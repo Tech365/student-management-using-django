@@ -212,6 +212,10 @@ class LeaveReportStudent(models.Model):
     # (parent_apply_leave) - lets the decision views also notify the
     # parent who applied, not just the student's own account.
     applied_by_parent = models.ForeignKey(Parent, on_delete=models.SET_NULL, null=True, blank=True)
+    # Who approved/rejected/cancelled this - set by whichever decision view
+    # handled it (teacher or admin). SET_NULL rather than CASCADE: deleting
+    # that account shouldn't erase the historical record of the decision.
+    decided_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
 
 class LeaveReportStaff(models.Model):
@@ -221,6 +225,7 @@ class LeaveReportStaff(models.Model):
     status = models.SmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    decided_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
 
 class FeedbackStudent(models.Model):

@@ -1110,6 +1110,7 @@ def view_staff_leave(request):
                     return HttpResponse(False)
                 status = 1 if status == '1' else -1
             leave.status = status
+            leave.decided_by = request.user
             leave.save()
             message = leave_decision_message(leave.date, status)
             NotificationStaff.objects.create(staff=leave.staff, message=message)
@@ -1148,6 +1149,7 @@ def view_student_leave(request):
                     return HttpResponse(False)
                 status = 1 if status == '1' else -1
             leave.status = status
+            leave.decided_by = request.user
             leave.save()
             notify_student_leave_decision(leave, status)
             if status == 2:

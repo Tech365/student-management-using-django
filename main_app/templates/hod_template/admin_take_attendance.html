@@ -121,12 +121,25 @@
             subjectSelect.prop("disabled", false)
 
             sessionSelect.html('<option value="">----</option>')
+            var matchedAnySession = false
             $("#all-sessions option").each(function () {
                 var courseIds = ($(this).data("courses") + "").split(" ")
                 if (courseIds.indexOf(course) !== -1) {
                     sessionSelect.append($("<option>").val($(this).val()).text($(this).text()))
+                    matchedAnySession = true
                 }
             })
+            if (!matchedAnySession) {
+                // No session has a student (primary or secondary) in this
+                // class yet - e.g. it was just created, or nobody's been
+                // enrolled into it via Class Enrollment yet. Narrowing to
+                // "years with students in this class" would leave every
+                // session excluded and dead-end the whole flow, so fall
+                // back to listing every session instead.
+                $("#all-sessions option").each(function () {
+                    sessionSelect.append($("<option>").val($(this).val()).text($(this).text()))
+                })
+            }
             sessionSelect.prop("disabled", false)
             // The session dropdown was just rebuilt (and reset to
             // unselected) - drop any stale per-session weekday restriction

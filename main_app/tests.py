@@ -2158,12 +2158,74 @@ class CancelLeaveTests(TestCase):
         self.assertNotContains(response, 'Approved')
 
 
+class LeaveDecisionAttributionTests(TestCase):
+    """Every leave decision (approve/reject/cancel) records who made it in
+    decided_by - previously nothing recorded this, so there was no way to
+    answer "who approved this leave" after the fact."""
+
+    def setUp(self):
+        self.course = make_course("Leave Attribution Course")
+        self.session = make_session()
+        self.teacher = make_staff("attribution_teacher@example.com", self.course)
+        make_subject("Leave Attribution Subject", self.teacher, self.course)
+        self.student = make_student("attribution_student@example.com", self.course, self.session)
+        make_admin("attribution_admin@example.com")
+
+    def test_teacher_approving_student_leave_is_recorded(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=0)
+        self.client.login(username="attribution_teacher@example.com", password=PASSWORD)
+        self.client.post(reverse('staff_view_student_leave'), {'id': leave.id, 'status': '1'})
+        leave.refresh_from_db()
+        self.assertEqual(leave.decided_by.email, "attribution_teacher@example.com")
+
+    def test_admin_rejecting_student_leave_is_recorded(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=0)
+        self.client.login(username="attribution_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '-1'})
+        leave.refresh_from_db()
+        self.assertEqual(leave.decided_by.email, "attribution_admin@example.com")
+
+    def test_admin_approving_staff_leave_is_recorded(self):
+        leave = LeaveReportStaff.objects.create(
+            staff=self.teacher, date=VALID_ATTENDANCE_DATE, message="Family event", status=0)
+        self.client.login(username="attribution_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_staff_leave'), {'id': leave.id, 'status': '1'})
+        leave.refresh_from_db()
+        self.assertEqual(leave.decided_by.email, "attribution_admin@example.com")
+
+    def test_cancelling_leave_records_the_canceller_not_the_original_approver(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=0)
+        self.client.login(username="attribution_teacher@example.com", password=PASSWORD)
+        self.client.post(reverse('staff_view_student_leave'), {'id': leave.id, 'status': '1'})
+        self.client.logout()
+        self.client.login(username="attribution_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '2'})
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, 2)
+        self.assertEqual(leave.decided_by.email, "attribution_admin@example.com")
+
+    def test_decided_by_shown_in_admin_decision_view(self):
+        leave = LeaveReportStudent.objects.create(
+            student=self.student, date=VALID_ATTENDANCE_DATE, message="Sick", status=0)
+        self.client.login(username="attribution_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('view_student_leave'), {'id': leave.id, 'status': '1'})
+        response = self.client.get(reverse('view_student_leave'))
+        admin_user = CustomUser.objects.get(email="attribution_admin@example.com")
+        self.assertContains(response, str(admin_user))
+
+
 class MultiDateLeaveApplicationTests(TestCase):
     """student_apply_leave/staff_apply_leave/parent_apply_leave now accept
     several dates in one submission - each becomes its own
     LeaveReportStudent/LeaveReportStaff row (the model is still one date
-    per record). A date that already has a request (any status) is
-    skipped, not duplicated."""
+    per record). A date that already has a Pending or Approved request is
+    skipped, not duplicated - but a Rejected/Cancelled one is revived back
+    to Pending so a person can reapply after circumstances change,
+    instead of the resubmission silently doing nothing and the leave
+    history just going on showing the old decided status."""
 
     def setUp(self):
         self.course = make_course("Multi Date Leave Course")
@@ -2191,6 +2253,83 @@ class MultiDateLeaveApplicationTests(TestCase):
         self.assertEqual(data['created'], ['2024-06-02'])
         self.assertEqual(data['skipped'], ['2024-06-01'])
         self.assertEqual(LeaveReportStudent.objects.filter(student=self.student, date='2024-06-01').count(), 1)
+
+    def test_student_reapplying_after_rejection_revives_the_same_row(self):
+        self.client.login(username="multidate_student@example.com", password=PASSWORD)
+        rejected = LeaveReportStudent.objects.create(
+            student=self.student, date='2024-06-01', message='Old reason', status=-1)
+        response = self.client.post(reverse('student_apply_leave'), {
+            'dates': '2024-06-01', 'message': 'New reason',
+        })
+        data = response.json()
+        self.assertEqual(data['created'], ['2024-06-01'])
+        self.assertEqual(LeaveReportStudent.objects.filter(student=self.student, date='2024-06-01').count(), 1)
+        rejected.refresh_from_db()
+        self.assertEqual(rejected.status, 0)
+        self.assertEqual(rejected.message, 'New reason')
+
+    def test_student_reapplying_after_cancellation_revives_the_same_row(self):
+        self.client.login(username="multidate_student@example.com", password=PASSWORD)
+        cancelled = LeaveReportStudent.objects.create(
+            student=self.student, date='2024-06-01', message='Old reason', status=2)
+        self.client.post(reverse('student_apply_leave'), {'dates': '2024-06-01', 'message': 'New reason'})
+        cancelled.refresh_from_db()
+        self.assertEqual(cancelled.status, 0)
+
+    def test_student_cannot_reapply_over_a_pending_request(self):
+        self.client.login(username="multidate_student@example.com", password=PASSWORD)
+        pending = LeaveReportStudent.objects.create(
+            student=self.student, date='2024-06-01', message='Old reason', status=0)
+        response = self.client.post(reverse('student_apply_leave'), {
+            'dates': '2024-06-01', 'message': 'New reason',
+        })
+        self.assertEqual(response.json()['skipped'], ['2024-06-01'])
+        pending.refresh_from_db()
+        self.assertEqual(pending.message, 'Old reason')
+
+    def test_student_cannot_reapply_over_an_approved_leave(self):
+        self.client.login(username="multidate_student@example.com", password=PASSWORD)
+        approved = LeaveReportStudent.objects.create(
+            student=self.student, date='2024-06-01', message='Old reason', status=1)
+        response = self.client.post(reverse('student_apply_leave'), {
+            'dates': '2024-06-01', 'message': 'New reason',
+        })
+        self.assertEqual(response.json()['skipped'], ['2024-06-01'])
+        approved.refresh_from_db()
+        self.assertEqual(approved.status, 1)
+        self.assertEqual(approved.message, 'Old reason')
+
+    def test_parent_reapplying_after_rejection_revives_the_row_and_sets_applied_by_parent(self):
+        parent_admin = make_staff("multidate_reapply_parent@example.com", self.course).admin
+        grant_role(parent_admin, '4', contact_number='5551234')
+        parent = parent_admin.parent
+        ParentStudentLink.objects.create(
+            parent=parent, student=self.student, relationship='Mother',
+            date_of_birth='2010-01-01', status=1)
+        rejected = LeaveReportStudent.objects.create(
+            student=self.student, date='2024-06-01', message='Old reason', status=-1)
+        self.client.login(username="multidate_reapply_parent@example.com", password=PASSWORD)
+        s = self.client.session
+        s['active_role'] = '4'
+        s.save()
+        response = self.client.post(reverse('parent_apply_leave'), {
+            'student': self.student.id, 'dates': '2024-06-01', 'message': 'New reason',
+        })
+        self.assertEqual(response.json()['created'], ['2024-06-01'])
+        rejected.refresh_from_db()
+        self.assertEqual(rejected.status, 0)
+        self.assertEqual(rejected.applied_by_parent, parent)
+
+    def test_staff_reapplying_after_rejection_revives_the_same_row(self):
+        self.client.login(username="multidate_teacher@example.com", password=PASSWORD)
+        rejected = LeaveReportStaff.objects.create(
+            staff=self.teacher, date='2024-06-01', message='Old reason', status=-1)
+        response = self.client.post(reverse('staff_apply_leave'), {
+            'dates': '2024-06-01', 'message': 'New reason',
+        })
+        self.assertEqual(response.json()['created'], ['2024-06-01'])
+        rejected.refresh_from_db()
+        self.assertEqual(rejected.status, 0)
 
     def test_staff_multi_date_creates_one_row_per_date(self):
         self.client.login(username="multidate_teacher@example.com", password=PASSWORD)

@@ -221,12 +221,17 @@
                 subjectSelect.val(currentSubject)
             }
 
-            var sessionOptions = course.length == 0 ? allSessionOptions :
-                allSessionOptions.filter(function () {
-                    if ($(this).val() === "") return true
-                    var courseIds = ($(this).data("courses") + "").split(" ")
-                    return courseIds.indexOf(course) !== -1
-                })
+            var narrowedSessionOptions = allSessionOptions.filter(function () {
+                if ($(this).val() === "") return true
+                var courseIds = ($(this).data("courses") + "").split(" ")
+                return courseIds.indexOf(course) !== -1
+            })
+            // If narrowing down to "sessions with a student in this class"
+            // leaves nothing but the placeholder, this class has no
+            // enrollment history yet (e.g. just created) - fall back to
+            // every session instead of dead-ending the filter.
+            var sessionOptions = course.length == 0 || narrowedSessionOptions.length <= 1 ?
+                allSessionOptions : narrowedSessionOptions
             sessionSelect.html(sessionOptions.clone())
             if (sessionSelect.find("option[value='" + currentSession + "']").length) {
                 sessionSelect.val(currentSession)

@@ -193,6 +193,49 @@ def notify_student_leave_decision(leave, status):
         send_push_notification(leave.applied_by_parent.admin, message, 'parent_view_notification')
 
 
+def apply_leave_for_dates(model, owner_field, owner, dates, message, extra_fields=None):
+    """Create a leave record for each date in a multi-date application.
+
+    A record for that (owner, date) may already exist from an earlier
+    application - if it's still Pending or Approved, leave it alone
+    (skipped) rather than silently clobbering an active request or an
+    already-granted leave. But if it was Rejected or Cancelled, the
+    person should be able to reapply (plans change) - reviving that same
+    row back to Pending rather than creating a second row for the same
+    date, which the one-row-per-date model here doesn't expect.
+    Previously reapplying after a rejection/cancellation silently did
+    nothing at all, and the leave history just kept showing the old
+    decided status - looking exactly like a leave nobody had approved
+    was somehow already "Approved".
+
+    Returns (created_dates, skipped_dates).
+    """
+    created = []
+    skipped = []
+    for d in dates:
+        existing = model.objects.filter(**{owner_field: owner, 'date': d}).first()
+        if existing and existing.status in (0, 1):
+            skipped.append(d)
+            continue
+        try:
+            if existing:
+                existing.message = message
+                existing.status = 0
+                existing.decided_by = None
+                for key, value in (extra_fields or {}).items():
+                    setattr(existing, key, value)
+                existing.save()
+            else:
+                model.objects.create(
+                    **{owner_field: owner, 'date': d, 'message': message}, **(extra_fields or {}))
+        except Exception:
+            logger.exception('Failed to create leave for %s on %s', owner, d)
+            skipped.append(d)
+            continue
+        created.append(d)
+    return created, skipped
+
+
 def approved_leave_student_ids(students, attendance_date):
     """IDs of `students` with an approved leave for `attendance_date`.
     LeaveReportStudent.date is a free-text field fed by the same HTML5

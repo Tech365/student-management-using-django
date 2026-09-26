@@ -15,8 +15,8 @@ from .forms import (LeaveReportStudentForm, ParentEditForm,
 from .models import (Attendance, Course, CustomUser,
                      LeaveReportStudent, NotificationParent, NotificationStaff,
                      Parent, ParentStudentLink, Staff, Student, Subject)
-from .utils import (attendance_with_leave_json, log_action, parent_can_access_student,
-                    rate_limited, send_notification_email)
+from .utils import (apply_leave_for_dates, attendance_with_leave_json, log_action,
+                    parent_can_access_student, rate_limited, send_notification_email)
 
 DEFAULT_PROFILE_PIC = 'dist/img/default-150x150.png'
 
@@ -287,20 +287,10 @@ def parent_apply_leave(request):
             # Same "every teacher of this class" fan-out student_apply_leave uses -
             # a class can have more than one teacher.
             teachers = Staff.objects.filter(subject__course=target_student.course).distinct()
-            created = []
-            skipped = []
-            for d in form.cleaned_data['dates']:
-                if LeaveReportStudent.objects.filter(student=target_student, date=d).exists():
-                    skipped.append(d)
-                    continue
-                try:
-                    LeaveReportStudent.objects.create(
-                        student=target_student, date=d, message=message, applied_by_parent=parent)
-                    created.append(d)
-                except Exception:
-                    logger.exception('Failed to create leave for %s on %s', target_student, d)
-                    skipped.append(d)
-                    continue
+            created, skipped = apply_leave_for_dates(
+                LeaveReportStudent, 'student', target_student, form.cleaned_data['dates'], message,
+                extra_fields={'applied_by_parent': parent})
+            for d in created:
                 notif_message = f"{target_student} applied for leave on {d}: {message} (submitted by parent)"
                 for teacher in teachers:
                     NotificationStaff.objects.create(staff=teacher, message=notif_message)

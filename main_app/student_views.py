@@ -16,7 +16,8 @@ from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      FeedbackStudent, LeaveReportStudent, NotificationStaff,
                      NotificationStudent, Staff, Student, StudentResult,
                      Subject)
-from .utils import attendance_with_leave_json, send_notification_email
+from .utils import (apply_leave_for_dates, attendance_with_leave_json,
+                    send_notification_email)
 
 logger = logging.getLogger(__name__)
 
@@ -108,19 +109,9 @@ def student_apply_leave(request):
             # than one teacher. Subject.course is never null, so
             # student.course=None naturally matches no teachers here.
             teachers = Staff.objects.filter(subject__course=student.course).distinct()
-            created = []
-            skipped = []
-            for d in form.cleaned_data['dates']:
-                if LeaveReportStudent.objects.filter(student=student, date=d).exists():
-                    skipped.append(d)
-                    continue
-                try:
-                    LeaveReportStudent.objects.create(student=student, date=d, message=message)
-                    created.append(d)
-                except Exception:
-                    logger.exception('Failed to create leave for %s on %s', student, d)
-                    skipped.append(d)
-                    continue
+            created, skipped = apply_leave_for_dates(
+                LeaveReportStudent, 'student', student, form.cleaned_data['dates'], message)
+            for d in created:
                 notif_message = f"{student} applied for leave on {d}: {message}"
                 for teacher in teachers:
                     NotificationStaff.objects.create(staff=teacher, message=notif_message)

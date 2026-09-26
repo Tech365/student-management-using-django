@@ -14,10 +14,10 @@ from .models import (Attendance, AttendanceReport, Course, CustomUser,
                      FeedbackStaff, LeaveReportStaff, LeaveReportStudent,
                      NotificationStaff, Session, Staff,
                      Student, StudentResult, Subject)
-from .utils import (all_configured_school_weekdays, approved_leave_student_ids,
-                    attendance_not_taken_rows, build_take_attendance_roster,
-                    notify_student_leave_decision, paginate,
-                    resolve_attendance_subject, save_take_attendance,
+from .utils import (all_configured_school_weekdays, apply_leave_for_dates,
+                    approved_leave_student_ids, attendance_not_taken_rows,
+                    build_take_attendance_roster, notify_student_leave_decision,
+                    paginate, resolve_attendance_subject, save_take_attendance,
                     send_notification_email, session_course_ids_map,
                     take_attendance_date_error, teacher_course_ids)
 
@@ -249,19 +249,9 @@ def staff_apply_leave(request):
         if form.is_valid():
             message = form.cleaned_data['message']
             admins = list(CustomUser.objects.filter(admin__isnull=False))
-            created = []
-            skipped = []
-            for d in form.cleaned_data['dates']:
-                if LeaveReportStaff.objects.filter(staff=staff, date=d).exists():
-                    skipped.append(d)
-                    continue
-                try:
-                    LeaveReportStaff.objects.create(staff=staff, date=d, message=message)
-                    created.append(d)
-                except Exception:
-                    logger.exception('Failed to create leave for %s on %s', staff, d)
-                    skipped.append(d)
-                    continue
+            created, skipped = apply_leave_for_dates(
+                LeaveReportStaff, 'staff', staff, form.cleaned_data['dates'], message)
+            for d in created:
                 notif_message = f"{staff} applied for leave on {d}: {message}"
                 # Admin has no in-app notification inbox, so email only.
                 for admin_user in admins:
@@ -304,6 +294,7 @@ def staff_view_student_leave(request):
                 # don't overwrite the decision or send a second notification.
                 return HttpResponse(False)
             leave.status = status
+            leave.decided_by = request.user
             leave.save()
             notify_student_leave_decision(leave, status)
             return HttpResponse(True)
