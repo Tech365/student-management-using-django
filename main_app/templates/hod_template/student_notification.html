@@ -114,8 +114,7 @@
            
                 
             if (response == 'True'){
-                notifyUser("Notification sent", "success");
-                location.reload();
+                notifyUserAndReload("Notification sent", "success");
               }else{
                 notifyUser("Notification could not be saved. Please try again.", "error");
               }

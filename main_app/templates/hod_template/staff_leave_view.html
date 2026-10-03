@@ -132,8 +132,7 @@
         }
     }).done(function(response){
         if (response == "True"){
-            notifyUser("Leave response saved", "success")
-            location.reload()
+            notifyUserAndReload("Leave response saved", "success")
         }else{
             notifyUser("Reply could not be sent", "error")
         }
@@ -155,8 +154,7 @@
                   data: { id: id, status: '2' }
               }).done(function (response) {
                   if (response == "True") {
-                      notifyUser("Leave cancelled", "success")
-                      location.reload()
+                      notifyUserAndReload("Leave cancelled", "success")
                   } else {
                       notifyUser("Could not cancel this leave", "error")
                   }

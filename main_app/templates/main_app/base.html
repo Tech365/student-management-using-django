@@ -257,6 +257,31 @@
             (toastr[type] || toastr.info)(message);
         }
 
+        // A screen that shows a toast then immediately reloads the page
+        // (many do, right after a successful POST) races the toast against
+        // navigation - the reload can finish before toastr has painted
+        // anything, so the very message meant to confirm success silently
+        // never appears. Worse, the race is won or lost depending on how
+        // fast that particular reload happens (e.g. cached vs. uncached
+        // assets), so it can look like it "works the first time" and then
+        // stop. notifyUserAndReload() stashes the message through the
+        // reload instead of racing it; the check below is what actually
+        // displays it once the new page has loaded.
+        function notifyUserAndReload(message, type) {
+            try { sessionStorage.setItem('pendingToast', JSON.stringify({ message: message, type: type })); } catch (e) {}
+            location.reload();
+        }
+        (function () {
+            var pending;
+            try { pending = sessionStorage.getItem('pendingToast'); } catch (e) { pending = null; }
+            if (!pending) return;
+            try { sessionStorage.removeItem('pendingToast'); } catch (e) {}
+            try {
+                var toast = JSON.parse(pending);
+                notifyUser(toast.message, toast.type);
+            } catch (e) {}
+        })();
+
         // Several class-roster screens (Take Attendance, results entry, ...)
         // build their markup with string concatenation + .html() instead of
         // Django's auto-escaping template rendering, because the data comes

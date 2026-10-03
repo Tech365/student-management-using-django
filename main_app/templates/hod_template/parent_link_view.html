@@ -114,8 +114,7 @@
         }
     }).done(function(response){
         if (response == "True"){
-            notifyUser("Response saved", "success")
-            location.reload()
+            notifyUserAndReload("Response saved", "success")
         }else{
             notifyUser("Reply could not be sent", "error")
         }

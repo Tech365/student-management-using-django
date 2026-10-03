@@ -118,8 +118,12 @@
                 var parts = []
                 if (response.created.length) { parts.push(response.created.length + " date(s) submitted") }
                 if (response.skipped.length) { parts.push(response.skipped.length + " already had a request") }
-                notifyUser(parts.join(", ") || "Nothing to submit", response.created.length ? "success" : "warning")
-                if (response.created.length) { location.reload() }
+                var message = parts.join(", ") || "Nothing to submit"
+                if (response.created.length) {
+                    notifyUserAndReload(message, "success")
+                } else {
+                    notifyUser(message, "warning")
+                }
             }).fail(function () {
                 notifyUser("Could not submit leave application", "error")
             }).always(function () {

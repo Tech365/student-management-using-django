@@ -121,8 +121,7 @@
                     }
                 }).done(function(response){
                     if (response == "True"){
-                        notifyUser("Reply sent", "success")
-                        location.reload()
+                        notifyUserAndReload("Reply sent", "success")
                     }else{
                         notifyUser("Reply could not be sent", "error")
                     }
