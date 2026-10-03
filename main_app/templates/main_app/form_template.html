@@ -17,6 +17,17 @@
         margin-right: 4px;
         vertical-align: middle;
     }
+    /* Generic fix for any single checkbox field rendered through the
+       field loop below - FormSettings forces class="form-control" onto
+       every widget including checkboxes, which otherwise stretches them
+       full-width like a text input. */
+    .form-group input[type="checkbox"].form-control {
+        width: auto;
+        height: auto;
+        display: inline-block;
+        margin-right: 6px;
+        vertical-align: middle;
+    }
 </style>
 <form role="form" method="POST" enctype="multipart/form-data">
     {% csrf_token %}

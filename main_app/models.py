@@ -91,6 +91,15 @@ class Admin(models.Model):
 
 class Course(models.Model):
     name = models.CharField(max_length=120)
+    # A few classes (e.g. a cross-class commemoration like "Meeqats") don't
+    # follow the normal school calendar at all - attendance for them can
+    # legitimately be taken on any date, so Take Attendance's school-day/
+    # "most recent school day" restrictions are lifted when this is set.
+    exempt_from_date_restrictions = models.BooleanField(
+        default=False,
+        help_text="Allow Take Attendance for this class on any date, with no school-day "
+                   "or \"most recent day\" restriction. Use this for a class that doesn't "
+                   "follow the normal school calendar (e.g. an occasional commemoration).")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -40,7 +40,7 @@
                             <select name="course" class="form-control" id='course'>
                                 <option value="">----</option>
                                 {% for course in courses %}
-                                <option value="{{course.id}}">{{course.name}}</option>
+                                <option value="{{course.id}}" data-exempt="{% if course.exempt_from_date_restrictions %}1{% else %}0{% endif %}">{{course.name}}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -171,11 +171,19 @@
         }
 
         function updateDatePickerRestriction() {
+            var courseId = $("#course").val()
+            // Some classes (e.g. a cross-class commemoration like
+            // "Meeqats") don't follow the normal school calendar at all -
+            // marked exempt_from_date_restrictions, which the server
+            // already enforces (see take_attendance_date_error); this
+            // just keeps the picker from visually blocking a date the
+            // server would accept anyway.
+            var exempt = courseId && $("#course option[value='" + courseId + "']").data("exempt") == 1
             var sessionId = $("#session").val()
             var schoolDays = sessionId
                 ? ($("#all-sessions option[value='" + sessionId + "']").data("schooldays") + "").trim()
                 : ""
-            if (!sessionId) {
+            if (!sessionId || exempt) {
                 datePicker.set('disable', [])
                 datePicker.set('minDate', null)
                 return

@@ -363,6 +363,7 @@ def add_course(request):
             try:
                 course = Course()
                 course.name = name
+                course.exempt_from_date_restrictions = form.cleaned_data.get('exempt_from_date_restrictions')
                 course.save()
                 log_action(request, 'created', 'Class', course)
                 messages.success(request, "Successfully Added")
@@ -931,6 +932,7 @@ def edit_course(request, course_id):
             try:
                 course = Course.objects.get(id=course_id)
                 course.name = name
+                course.exempt_from_date_restrictions = form.cleaned_data.get('exempt_from_date_restrictions')
                 course.save()
                 log_action(request, 'updated', 'Class', course)
                 messages.success(request, "Successfully Updated")
@@ -1237,7 +1239,7 @@ def admin_get_students(request):
         subject = resolve_attendance_subject(subject_id)  # staff=None - any class
         session = get_object_or_404(Session, id=session_id)
         date_obj = datetime.strptime(attendance_date, "%Y-%m-%d").date()
-        if not is_school_day(session, date_obj):
+        if not is_school_day(session, date_obj, course=subject.course):
             return JsonResponse({'error': "That date isn't a school day for the selected session."}, status=400)
         # Deliberately no take_attendance_date_error/latest_school_day
         # floor here, unlike the teacher-facing get_students - the whole
@@ -1260,7 +1262,7 @@ def admin_save_attendance(request):
         subject = resolve_attendance_subject(subject_id)
         session = get_object_or_404(Session, id=session_id)
         date_obj = datetime.strptime(date, "%Y-%m-%d").date()
-        if not is_school_day(session, date_obj):
+        if not is_school_day(session, date_obj, course=subject.course):
             return HttpResponse("False")
         # taken_by=None - admin has no Staff row to attribute this to;
         # every place Attendance.taken_by is read already guards on

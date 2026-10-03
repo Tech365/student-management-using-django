@@ -504,10 +504,14 @@ def _js_weekday(date_obj):
     return (date_obj.weekday() + 1) % 7
 
 
-def is_school_day(session, date_obj):
+def is_school_day(session, date_obj, course=None):
     """True if `date_obj` falls on one of `session`'s configured
     school_days, or unconditionally True when school_days is blank
-    (unrestricted, the default before this field existed)."""
+    (unrestricted, the default before this field existed) - or when
+    `course` is flagged exempt_from_date_restrictions (e.g. a cross-class
+    commemoration that doesn't follow the normal school calendar at all)."""
+    if course is not None and course.exempt_from_date_restrictions:
+        return True
     if not session.school_days:
         return True
     allowed = {int(d) for d in session.school_days.split(',') if d}
@@ -530,13 +534,16 @@ def latest_school_day(session, today=None):
     return today  # unreachable - a non-empty school_days always matches within a week
 
 
-def take_attendance_date_error(session, date_obj):
+def take_attendance_date_error(session, date_obj, course=None):
     """None if `date_obj` is acceptable for the Take Attendance screen;
     otherwise a user-facing reason it isn't. Server-side backstop for the
     same rule the client already enforces via flatpickr's minDate/disable
     (see staff_take_attendance.html) - nothing server-side validated this
     before, so a forged/replayed request could take attendance for any
-    date at all."""
+    date at all. `course` flagged exempt_from_date_restrictions skips both
+    checks entirely (see is_school_day)."""
+    if course is not None and course.exempt_from_date_restrictions:
+        return None
     if not is_school_day(session, date_obj):
         return "That date isn't a school day for the selected session."
     if date_obj < latest_school_day(session):

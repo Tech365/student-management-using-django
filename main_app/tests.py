@@ -1577,6 +1577,90 @@ class AdminTakeAttendanceTests(TestCase):
         self.assertRedirects(response, reverse('staff_home'))
 
 
+class DateExemptClassTests(TestCase):
+    """A class flagged exempt_from_date_restrictions (e.g. a cross-class
+    commemoration like "Meeqats" that doesn't follow the normal school
+    calendar) can have attendance taken for ANY date - no school-day
+    weekday check, and (for teachers) no "latest school day" floor either -
+    for both the admin and teacher Take Attendance screens. A non-exempt
+    class is unaffected."""
+
+    def setUp(self):
+        self.course = Course.objects.create(name="Meeqats Test", exempt_from_date_restrictions=True)
+        # Saturdays only - a date far outside this would normally be
+        # rejected for both the weekday check and the "too far in the
+        # past" floor.
+        self.session = make_session(school_days='6')
+        self.teacher = make_staff("exempt_teacher@example.com", self.course)
+        self.subject = make_subject("Meeqats Test Subject", self.teacher, self.course)
+        self.student = make_student("exempt_student@example.com", self.course, self.session)
+        make_admin("exempt_admin@example.com")
+        # A Tuesday, 30 days in the past - fails every normal rule at once.
+        candidate = datetime.date.today() - datetime.timedelta(days=30)
+        while candidate.weekday() != 1:
+            candidate -= datetime.timedelta(days=1)
+        self.bad_date = candidate.isoformat()
+
+    def test_teacher_can_fetch_roster_for_exempt_class_on_any_date(self):
+        self.client.login(username="exempt_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': self.bad_date,
+        })
+        self.assertEqual(response.status_code, 200)
+
+    def test_teacher_can_save_attendance_for_exempt_class_on_any_date(self):
+        self.client.login(username="exempt_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('save_attendance'), {
+            'date': self.bad_date, 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(response.content, b"OK")
+
+    def test_admin_can_fetch_and_save_for_exempt_class_on_any_date(self):
+        self.client.login(username="exempt_admin@example.com", password=PASSWORD)
+        response = self.client.post(reverse('admin_get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': self.bad_date,
+        })
+        self.assertEqual(response.status_code, 200)
+        save_response = self.client.post(reverse('admin_save_attendance'), {
+            'date': self.bad_date, 'subject': self.subject.id, 'session': self.session.id,
+            'student_ids': json.dumps([{'id': self.student.id, 'status': 1}]),
+        })
+        self.assertEqual(save_response.content, b"OK")
+
+    def test_add_course_can_set_exempt_flag(self):
+        make_admin("exempt_course_add_admin@example.com")
+        self.client.login(username="exempt_course_add_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('add_course'), {
+            'name': 'New Exempt Course', 'exempt_from_date_restrictions': 'on',
+        })
+        course = Course.objects.get(name='New Exempt Course')
+        self.assertTrue(course.exempt_from_date_restrictions)
+
+    def test_edit_course_can_toggle_exempt_flag(self):
+        make_admin("exempt_course_edit_admin@example.com")
+        self.client.login(username="exempt_course_edit_admin@example.com", password=PASSWORD)
+        self.client.post(reverse('edit_course', args=[self.course.id]), {'name': self.course.name})
+        self.course.refresh_from_db()
+        self.assertFalse(self.course.exempt_from_date_restrictions)
+
+    def test_non_exempt_class_still_rejects_bad_date(self):
+        self.course.exempt_from_date_restrictions = False
+        self.course.save()
+        self.client.login(username="exempt_teacher@example.com", password=PASSWORD)
+        response = self.client.post(reverse('get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': self.bad_date,
+        })
+        self.assertEqual(response.status_code, 400)
+
+        self.client.logout()
+        self.client.login(username="exempt_admin@example.com", password=PASSWORD)
+        admin_response = self.client.post(reverse('admin_get_students'), {
+            'subject': self.subject.id, 'session': self.session.id, 'date': self.bad_date,
+        })
+        self.assertEqual(admin_response.status_code, 400)
+
+
 class AttendanceComplianceReportTests(TestCase):
     """How reliably attendance is taken over a date range, not just a
     single day - the "Attendance Not Taken" report's trend-over-time

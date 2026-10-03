@@ -96,7 +96,7 @@ def get_students(request):
         session = get_object_or_404(Session, id=session_id)
 
         date_obj = datetime.strptime(attendance_date, "%Y-%m-%d").date()
-        date_error = take_attendance_date_error(session, date_obj)
+        date_error = take_attendance_date_error(session, date_obj, course=subject.course)
         if date_error:
             return JsonResponse({'error': date_error}, status=400)
 
@@ -121,7 +121,7 @@ def save_attendance(request):
         subject = resolve_attendance_subject(subject_id, staff=staff)
 
         date_obj = datetime.strptime(date, "%Y-%m-%d").date()
-        if take_attendance_date_error(session, date_obj):
+        if take_attendance_date_error(session, date_obj, course=subject.course):
             return HttpResponse("False")
 
         save_take_attendance(subject, session, date, students, taken_by=staff)
